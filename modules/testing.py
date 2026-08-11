@@ -1,0 +1,333 @@
+import streamlit as st
+import datetime
+from config.database import supabase
+from config.ai_config import generate_istqb_content
+
+# ==========================================
+# ABA 1: CASOS DE TESTE (ISTQB)
+# ==========================================
+
+def render_test_cases_tab(project_id: str):
+    st.subheader("📋 Gestão e Execução de Casos de Teste")
+    
+    # --- NOVO: BOTÃO DE GERAÇÃO EM MASSA VIA IA (PONTOS 1 & 2) ---
+    with st.expander("🚀 Geração Inteligente de Suíte Completa via IA (Múltiplos Testes)", expanded=False):
+        st.info("💡 A IA fará a leitura completa do documento/PDF do projeto e gerará automaticamente uma suíte robusta com vários casos de teste cobrindo todas as funcionalidades identificadas.")
+        
+        foco_lote = st.text_input("Foco opcional para a suíte (ex: Priorizar testes de segurança e login):", key="batch_ai_foco")
+        
+        if st.button("✨ Gerar Suíte Completa de Testes com IA", type="primary", key="btn_gen_batch_tc"):
+            with st.spinner("A IA está analisando o documento do projeto e estruturando os casos de teste..."):
+                query_lote = project_id
+                if foco_lote.strip():
+                    query_lote += f" | Foco da suíte: {foco_lote}"
+                
+                # Solicitamos uma lista em lote para a IA
+                data = generate_istqb_content("test_cases_batch", query_lote)
+                
+                # Se a IA retornar uma lista de testes
+                if data and isinstance(data, list):
+                    sucesso_count = 0
+                    for item in data:
+                        payload = {
+                            "project_id": project_id,
+                            "test_type": item.get("test_type", "Funcional"),
+                            "title": item.get("title", "Caso de Teste Gerado por IA"),
+                            "preconditions": item.get("preconditions", ""),
+                            "steps": item.get("steps", ""),
+                            "expected_result": item.get("expected_result", ""),
+                            "status": "Não Executado"
+                        }
+                        try:
+                            supabase.table("test_cases").insert(payload).execute()
+                            sucesso_count += 1
+                        except Exception:
+                            pass
+                    
+                    if sucesso_count > 0:
+                        st.success(f"Suíte gerada com sucesso! {sucesso_count} casos de teste adicionados ao projeto.")
+                        st.rerun()
+                    else:
+                        st.error("Houve um erro ao salvar os casos de teste gerados no Supabase.")
+                else:
+                    st.error("A IA não retornou uma lista válida. Verifique a configuração da IA.")
+
+    st.divider()
+
+    with st.expander("➕ Criar Caso de Teste Individual (Manual ou Unitário com IA)", expanded=False):
+        mode = st.radio("Modo de Criação", ["Sem IA (Manual)", "Com IA (Unitário)"], horizontal=True, key="tc_mode_radio")
+        test_type = st.selectbox("Tipo de Teste", ["Funcional", "Regressão", "Smoke", "Não-Funcional"], key="tc_type_select")
+        
+        if mode == "Com IA (Unitário)":
+            st.info("💡 A IA lerá o documento e adequará o caso de teste com base no contexto digitado abaixo.")
+            user_story = st.text_area("O que deseja testar? (ex: tela de login, fluxo de carrinho...):", placeholder="Ex: Validar se o usuário consegue logar com credenciais inválidas...", key="tc_ai_prompt")
+            
+            if st.button("✨ Gerar e Salvar Caso de Teste via IA", type="primary", key="btn_gen_tc_ai"):
+                with st.spinner("IA lendo o documento e gerando o caso de teste..."):
+                    query_ia = project_id
+                    if user_story.strip():
+                        query_ia += f" | Contexto/Foco: {user_story}"
+
+                    data = generate_istqb_content("test_case", query_ia)
+                    
+                    if data and isinstance(data, dict):
+                        payload = {
+                            "project_id": project_id, 
+                            "test_type": test_type,
+                            "title": data.get("title", "Caso de Teste Gerado por IA"), 
+                            "preconditions": data.get("preconditions", ""),
+                            "steps": data.get("steps", ""),
+                            "expected_result": data.get("expected_result", ""),
+                            "status": "Não Executado"
+                        }
+                        
+                        try:
+                            supabase.table("test_cases").insert(payload).execute()
+                            st.success("Caso de teste salvo com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no Supabase: {e}")
+                    else:
+                        st.error("Falha ao gerar o caso de teste pela IA.")
+        else:
+            with st.form("manual_tc_form", clear_on_submit=True):
+                title = st.text_input("Título do Caso de Teste")
+                preconditions = st.text_area("Pré-condições")
+                steps = st.text_area("Passos")
+                expected_result = st.text_area("Resultado Esperado")
+                if st.form_submit_button("💾 Salvar Caso de Teste"):
+                    if title.strip():
+                        payload = {
+                            "project_id": project_id, 
+                            "test_type": test_type, 
+                            "title": title, 
+                            "preconditions": preconditions, 
+                            "steps": steps,
+                            "expected_result": expected_result, 
+                            "status": "Não Executado"
+                        }
+                        try:
+                            supabase.table("test_cases").insert(payload).execute()
+                            st.success("Salvo com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no Supabase: {e}")
+                    else:
+                        st.error("O título do caso de teste é obrigatório.")
+
+    st.divider()
+    
+    # --- FILTRO E LISTAGEM EXPANSÍVEL ---
+    st.markdown("### Suíte de Testes")
+    filter_type = st.selectbox("Filtrar por Tipo:", ["Todos", "Funcional", "Regressão", "Smoke", "Não-Funcional"], key="tc_filter_select")
+    
+    query = supabase.table("test_cases").select("*").eq("project_id", project_id)
+    if filter_type != "Todos":
+        query = query.eq("test_type", filter_type)
+    
+    test_cases = query.execute().data or []
+        
+    if not test_cases:
+        st.info("Nenhum caso de teste encontrado.")
+    else:
+        for tc in test_cases:
+            status = tc.get("status", "Não Executado")
+            status_icon = "🟢" if status == "Passou" else ("🔴" if status == "Falhou" else ("🟡" if status == "Bloqueado" else "⚪"))
+
+            with st.expander(f"{status_icon} [{tc.get('test_type', 'Teste')}] {tc.get('title')}"):
+                col_det, col_act = st.columns([3, 1])
+                
+                with col_det:
+                    st.markdown(f"**Pré-condições:** {tc.get('preconditions') or 'N/A'}")
+                    st.markdown(f"**Passos:**\n\n{tc.get('steps') or 'N/A'}")
+                    st.markdown(f"**Resultado Esperado:**\n\n{tc.get('expected_result') or 'N/A'}")
+                    
+                    st.divider()
+                    c_edit, c_clone, c_del = st.columns(3)
+                    
+                    with c_edit:
+                        with st.popover("✏️ Editar", key=f"pop_edit_tc_{tc['id']}"):
+                            e_title = st.text_input("Título", value=tc['title'], key=f"e_tc_t_{tc['id']}")
+                            e_pre = st.text_area("Pré-condições", value=tc.get('preconditions', ''), key=f"e_tc_p_{tc['id']}")
+                            e_steps = st.text_area("Passos", value=tc.get('steps', ''), key=f"e_tc_s_{tc['id']}")
+                            e_exp = st.text_area("Esperado", value=tc.get('expected_result', ''), key=f"e_tc_e_{tc['id']}")
+                            if st.button("Salvar Alterações", key=f"btn_tc_edit_{tc['id']}"):
+                                supabase.table("test_cases").update({
+                                    "title": e_title, "preconditions": e_pre, "steps": e_steps, "expected_result": e_exp
+                                }).eq('id', tc['id']).execute()
+                                st.rerun()
+
+                    with c_clone:
+                        if st.button("📋 Clonar Ciclo", key=f"btn_tc_clone_{tc['id']}"):
+                            clone_payload = {
+                                "project_id": project_id,
+                                "test_type": "Regressão",
+                                "title": f"[Regressão] {tc['title']}",
+                                "preconditions": tc.get('preconditions', ''),
+                                "steps": tc.get('steps', ''),
+                                "expected_result": tc.get('expected_result', ''),
+                                "status": "Não Executado"
+                            }
+                            supabase.table("test_cases").insert(clone_payload).execute()
+                            st.success("Caso de teste clonado para regressão!")
+                            st.rerun()
+                    
+                    with c_del:
+                        if st.button("🗑️ Excluir", key=f"btn_tc_del_{tc['id']}", type="primary"):
+                            supabase.table("test_cases").delete().eq('id', tc['id']).execute()
+                            st.rerun()
+
+                with col_act:
+                    st.write(f"**Status:** {status}")
+                    st.write("**Executar Ciclo:**")
+                    
+                    if st.button("🟢 Passou", key=f"p_{tc['id']}", use_container_width=True):
+                        supabase.table("test_cases").update({"status": "Passou"}).eq("id", tc['id']).execute()
+                        st.rerun()
+                    if st.button("🔴 Falhou", key=f"f_{tc['id']}", use_container_width=True):
+                        supabase.table("test_cases").update({"status": "Falhou"}).eq("id", tc['id']).execute()
+                        st.rerun()
+                    if st.button("🟡 Bloqueado", key=f"b_{tc['id']}", use_container_width=True):
+                        supabase.table("test_cases").update({"status": "Bloqueado"}).eq("id", tc['id']).execute()
+                        st.rerun()
+
+# ==========================================
+# ABA 2: BUG REPORTS (ISTQB / IEEE 829)
+# ==========================================
+
+def render_bug_reports_tab(project_id: str):
+    st.subheader("🐛 Registro e Gestão de Bugs")
+    
+    with st.expander("🚨 Registrar Novo Bug", expanded=False):
+        bug_mode = st.radio("Modo de Registro:", ["Sem IA (Manual)", "Com IA (Automático)"], horizontal=True, key="bug_mode_radio")
+        
+        if bug_mode == "Com IA (Automático)":
+            st.info("💡 A IA analisará os documentos do projeto juntamente com o seu relato para montar o Bug Report padrão ISTQB.")
+            raw_bug = st.text_area("Descreva o problema encontrado:", key="bug_ai_prompt")
+            
+            if st.button("✨ Gerar e Salvar Bug Report via IA", type="primary", key="btn_gen_bug_ai"):
+                if raw_bug.strip():
+                    with st.spinner("IA criando o Bug Report no padrão ISTQB..."):
+                        query_bug_ia = f"{project_id} | Falha relatada: {raw_bug}"
+                        data = generate_istqb_content("bug_report", query_bug_ia)
+                        
+                        if data and isinstance(data, dict):
+                            steps_content = data.get("steps_to_reproduce") or ""
+                            payload = {
+                                "project_id": project_id, 
+                                "title": data.get("title", "Bug Relatado por IA"), 
+                                "severity": data.get("severity", "Média"),
+                                "steps": steps_content, 
+                                "expected_behavior": data.get("expected_behavior", ""), 
+                                "actual_behavior": data.get("actual_behavior", ""),
+                                "status": "Aberto"
+                            }
+                            try:
+                                supabase.table("bug_reports").insert(payload).execute()
+                                st.success("Bug ISTQB registrado com sucesso!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao salvar no Supabase: {e}")
+                        else:
+                            st.error("Falha ao gerar o bug report pela IA. Tente novamente.")
+                else:
+                    st.warning("Escreva a descrição do problema encontrado.")
+        else:
+            with st.form("bug_report_form", clear_on_submit=True):
+                title = st.text_input("Título do Bug")
+                severity = st.selectbox("Severidade", ["Baixa", "Média", "Alta", "Crítica"])
+                steps = st.text_area("Passos para Reproduzir")
+                expected_behavior = st.text_area("Comportamento Esperado")
+                actual_behavior = st.text_area("Comportamento Atual")
+                if st.form_submit_button("🚨 Registrar Bug"):
+                    if title.strip():
+                        payload = {
+                            "project_id": project_id, 
+                            "title": title, 
+                            "severity": severity,
+                            "steps": steps, 
+                            "expected_behavior": expected_behavior, 
+                            "actual_behavior": actual_behavior,
+                            "status": "Aberto"
+                        }
+                        try:
+                            supabase.table("bug_reports").insert(payload).execute()
+                            st.success("Bug registrado com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no Supabase: {e}")
+                    else:
+                        st.error("O título do bug é obrigatório.")
+
+    st.divider()
+    
+    bug_status_filter = st.selectbox("Filtrar por Status do Bug:", ["Todos", "Aberto", "Em correção", "Pronto para Teste", "Passou", "Fechado"], key="bug_status_filter_select")
+    
+    b_query = supabase.table("bug_reports").select("*").eq("project_id", project_id)
+    if bug_status_filter != "Todos":
+        b_query = b_query.eq("status", bug_status_filter)
+        
+    bugs = b_query.execute().data or []
+    
+    if not bugs:
+        st.info("Nenhum bug registrado com este filtro.")
+    else:
+        for bug in bugs:
+            sev = bug.get("severity", "Média")
+            bug_status = bug.get('status', 'Aberto')
+            sev_color = "🔴" if sev in ["Alta", "Crítica"] else ("🟡" if sev == "Média" else "🟢")
+            
+            with st.expander(f"{sev_color} [{sev}] {bug.get('title')} - Status: `{bug_status}`"):
+                st.markdown(f"**Passos:**\n\n{bug.get('steps') or 'N/A'}")
+                st.markdown(f"**Esperado:** {bug.get('expected_behavior') or 'N/A'}")
+                st.markdown(f"**Atual:** {bug.get('actual_behavior') or 'N/A'}")
+                
+                st.divider()
+                c_status, c_edit, c_del = st.columns([2, 1, 1])
+                
+                with c_status:
+                    status_options = ["Aberto", "Em correção", "Pronto para Teste", "Passou", "Fechado"]
+                    current_idx = status_options.index(bug_status) if bug_status in status_options else 0
+                    
+                    new_b_status = st.selectbox(
+                        "Atualizar Status:", 
+                        status_options,
+                        index=current_idx,
+                        key=f"st_bug_{bug['id']}"
+                    )
+                    if new_b_status != bug_status:
+                        if st.button("💾 Salvar Status", key=f"btn_save_st_{bug['id']}"):
+                            supabase.table("bug_reports").update({"status": new_b_status}).eq("id", bug['id']).execute()
+                            st.success("Status atualizado!")
+                            st.rerun()
+
+                with c_edit:
+                    with st.popover("✏️ Editar", key=f"pop_edit_bug_{bug['id']}"):
+                        e_title = st.text_input("Título", value=bug['title'], key=f"e_b_t_{bug['id']}")
+                        e_sev = st.selectbox("Severidade", ["Baixa", "Média", "Alta", "Crítica"], index=["Baixa", "Média", "Alta", "Crítica"].index(sev) if sev in ["Baixa", "Média", "Alta", "Crítica"] else 1, key=f"e_b_s_{bug['id']}")
+                        e_steps = st.text_area("Passos", value=bug.get('steps', ''), key=f"e_b_st_{bug['id']}")
+                        e_exp = st.text_area("Esperado", value=bug.get('expected_behavior', ''), key=f"e_b_ex_{bug['id']}")
+                        e_act = st.text_area("Atual", value=bug.get('actual_behavior', ''), key=f"e_b_ac_{bug['id']}")
+                        if st.button("Salvar Alterações", key=f"btn_bug_edit_{bug['id']}"):
+                            supabase.table("bug_reports").update({
+                                "title": e_title, "severity": e_sev, "steps": e_steps,
+                                "expected_behavior": e_exp, "actual_behavior": e_act
+                            }).eq('id', bug['id']).execute()
+                            st.rerun()
+                
+                with c_del:
+                    if st.button("🗑️ Excluir", key=f"btn_bug_del_{bug['id']}", type="primary"):
+                        supabase.table("bug_reports").delete().eq('id', bug['id']).execute()
+                        st.rerun()
+
+def render_testing_module(project_id: str):
+    if not project_id:
+        st.warning("Selecione um projeto para acessar o Módulo de Testes.")
+        return
+
+    st.title("🧪 Módulo de Testes & Qualidade")
+    tab1, tab2 = st.tabs(["Casos de Teste & Execução", "Bug Reports"])
+    with tab1:
+        render_test_cases_tab(project_id)
+    with tab2:
+        render_bug_reports_tab(project_id)
