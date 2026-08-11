@@ -204,7 +204,7 @@ def render_test_cases_tab(project_id: str):
                                 "steps": tc.get('steps', ''),
                                 "expected_result": tc.get('expected_result', ''),
                                 "status": "Não Executado",
-                                "test_cycle": current_cycle  # Joga para o ciclo atual de trabalho
+                                "test_cycle": current_cycle 
                             }
                             supabase.table("test_cases").insert(clone_payload).execute()
                             st.success("Caso de teste clonado para regressão com sucesso!")
@@ -229,6 +229,7 @@ def render_test_cases_tab(project_id: str):
                         supabase.table("test_cases").update({"status": "Bloqueado"}).eq("id", tc['id']).execute()
                         st.rerun()
 
+
 # ==========================================
 # ABA 2: BUG REPORTS (ISTQB / IEEE 829)
 # ==========================================
@@ -236,11 +237,19 @@ def render_test_cases_tab(project_id: str):
 def render_bug_reports_tab(project_id: str):
     st.subheader("🐛 Registro e Gestão de Bugs")
     
+    # Campo para definir o ciclo do bug atual
+    bug_cycle_input = st.text_input(
+        "🏷️ Ciclo de Teste do Bug / Release:", 
+        value="Geral", 
+        key="bug_active_cycle_input",
+        help="Informe a release ou ciclo onde este bug foi encontrado."
+    )
+    
     with st.expander("🚨 Registrar Novo Bug", expanded=False):
         bug_mode = st.radio("Modo de Registro:", ["Sem IA (Manual)", "Com IA (Automático)"], horizontal=True, key="bug_mode_radio")
         
         if bug_mode == "Com IA (Automático)":
-            st.info("💡 A IA analisará os documentos do projeto juntamente com o seu relato para montar o Bug Report padrão ISTQB.")
+            st.info(f"💡 A IA analisará os documentos do projeto juntamente com o seu relato para montar o Bug Report atribuído ao ciclo: **{bug_cycle_input}**")
             raw_bug = st.text_area("Descreva o problema encontrado:", key="bug_ai_prompt")
             
             if st.button("✨ Gerar e Salvar Bug Report via IA", type="primary", key="btn_gen_bug_ai"):
@@ -258,7 +267,8 @@ def render_bug_reports_tab(project_id: str):
                                 "steps": steps_content, 
                                 "expected_behavior": data.get("expected_behavior", ""), 
                                 "actual_behavior": data.get("actual_behavior", ""),
-                                "status": "Aberto"
+                                "status": "Aberto",
+                                "test_cycle": bug_cycle_input
                             }
                             try:
                                 supabase.table("bug_reports").insert(payload).execute()
@@ -277,6 +287,7 @@ def render_bug_reports_tab(project_id: str):
                 steps = st.text_area("Passos para Reproduzir")
                 expected_behavior = st.text_area("Comportamento Esperado")
                 actual_behavior = st.text_area("Comportamento Atual")
+                
                 if st.form_submit_button("🚨 Registrar Bug"):
                     if title.strip():
                         payload = {
@@ -286,7 +297,8 @@ def render_bug_reports_tab(project_id: str):
                             "steps": steps, 
                             "expected_behavior": expected_behavior, 
                             "actual_behavior": actual_behavior,
-                            "status": "Aberto"
+                            "status": "Aberto",
+                            "test_cycle": bug_cycle_input
                         }
                         try:
                             supabase.table("bug_reports").insert(payload).execute()
@@ -299,23 +311,39 @@ def render_bug_reports_tab(project_id: str):
 
     st.divider()
     
-    bug_status_filter = st.selectbox("Filtrar por Status do Bug:", ["Todos", "Aberto", "Em correção", "Pronto para Teste", "Passou", "Fechado"], key="bug_status_filter_select")
+    # --- FILTROS DE BUGS (CICLO E STATUS) ---
+    col_bf1, col_bf2 = st.columns(2)
+    with col_bf1:
+        # Busca ciclos de bugs cadastrados para o filtro
+        existing_bug_cycles_res = supabase.table("bug_reports").select("test_cycle").eq("project_id", project_id).execute()
+        bug_cycles_list = sorted(list(set([row.get("test_cycle", "Geral") for row in (existing_bug_cycles_res.data or [])])))
+        if "Geral" not in bug_cycles_list:
+            bug_cycles_list.insert(0, "Geral")
+            
+        bug_cycle_filter = st.selectbox("Filtrar por Ciclo do Bug:", ["Todos"] + bug_cycles_list, key="bug_cycle_filter_select")
+    
+    with col_bf2:
+        bug_status_filter = st.selectbox("Filtrar por Status do Bug:", ["Todos", "Aberto", "Em correção", "Pronto para Teste", "Passou", "Fechado"], key="bug_status_filter_select")
     
     b_query = supabase.table("bug_reports").select("*").eq("project_id", project_id)
+    if bug_cycle_filter != "Todos":
+        b_query = b_query.eq("test_cycle", bug_cycle_filter)
     if bug_status_filter != "Todos":
         b_query = b_query.eq("status", bug_status_filter)
         
     bugs = b_query.execute().data or []
     
     if not bugs:
-        st.info("Nenhum bug registrado com este filtro.")
+        st.info("Nenhum bug registrado com estes filtros.")
     else:
         for bug in bugs:
             sev = bug.get("severity", "Média")
             bug_status = bug.get('status', 'Aberto')
+            bug_cycle_tag = bug.get('test_cycle', 'Geral')
             sev_color = "🔴" if sev in ["Alta", "Crítica"] else ("🟡" if sev == "Média" else "🟢")
             
-            with st.expander(f"{sev_color} [{sev}] {bug.get('title')} - Status: `{bug_status}`"):
+            with st.expander(f"{sev_color} [{sev}] ({bug_cycle_tag}) {bug.get('title')} - Status: `{bug_status}`"):
+                st.markdown(f"**Ciclo:** `{bug_cycle_tag}`")
                 st.markdown(f"**Passos:**\n\n{bug.get('steps') or 'N/A'}")
                 st.markdown(f"**Esperado:** {bug.get('expected_behavior') or 'N/A'}")
                 st.markdown(f"**Atual:** {bug.get('actual_behavior') or 'N/A'}")
@@ -342,13 +370,14 @@ def render_bug_reports_tab(project_id: str):
                 with c_edit:
                     with st.popover("✏️ Editar", key=f"pop_edit_bug_{bug['id']}"):
                         e_title = st.text_input("Título", value=bug['title'], key=f"e_b_t_{bug['id']}")
+                        e_cycle = st.text_input("Ciclo", value=bug_cycle_tag, key=f"e_b_c_{bug['id']}")
                         e_sev = st.selectbox("Severidade", ["Baixa", "Média", "Alta", "Crítica"], index=["Baixa", "Média", "Alta", "Crítica"].index(sev) if sev in ["Baixa", "Média", "Alta", "Crítica"] else 1, key=f"e_b_s_{bug['id']}")
                         e_steps = st.text_area("Passos", value=bug.get('steps', ''), key=f"e_b_st_{bug['id']}")
                         e_exp = st.text_area("Esperado", value=bug.get('expected_behavior', ''), key=f"e_b_ex_{bug['id']}")
                         e_act = st.text_area("Atual", value=bug.get('actual_behavior', ''), key=f"e_b_ac_{bug['id']}")
                         if st.button("Salvar Alterações", key=f"btn_bug_edit_{bug['id']}"):
                             supabase.table("bug_reports").update({
-                                "title": e_title, "severity": e_sev, "steps": e_steps,
+                                "title": e_title, "test_cycle": e_cycle, "severity": e_sev, "steps": e_steps,
                                 "expected_behavior": e_exp, "actual_behavior": e_act
                             }).eq('id', bug['id']).execute()
                             st.rerun()
