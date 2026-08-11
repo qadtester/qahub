@@ -1,7 +1,17 @@
+import re
 import streamlit as st
 import datetime
 from config.database import supabase
 from config.ai_config import generate_istqb_content
+
+# ==========================================
+# FUNÇÃO AUXILIAR: LIMPEZA DE TÍTULO (REGRESSÃO)
+# ==========================================
+def format_regression_title(original_title: str) -> str:
+    """Garante que o prefixo [Regressão] apareça apenas uma vez, limpando acumulados."""
+    clean_title = re.sub(r'(\s*\[Regressão\]\s*)+', '', original_title).strip()
+    return f"[Regressão] {clean_title}"
+
 
 # ==========================================
 # ABA 1: CASOS DE TESTE (ISTQB)
@@ -10,9 +20,24 @@ from config.ai_config import generate_istqb_content
 def render_test_cases_tab(project_id: str):
     st.subheader("📋 Gestão e Execução de Casos de Teste")
     
-    # --- NOVO: BOTÃO DE GERAÇÃO EM MASSA VIA IA (PONTOS 1 & 2) ---
+    # --- SELETOR GLOBAL DE CICLO ATIVO PARA CRIAÇÃO/FILTRAGEM ---
+    col_c1, col_c2 = st.columns([2, 1])
+    with col_c1:
+        current_cycle = st.text_input(
+            "🏷️ Ciclo de Teste Atual / Release:", 
+            value="Geral", 
+            help="Ex: Release 1.0, Sprint 12, Pós-Deploy v1.1. Todos os novos testes criados irão para este ciclo."
+        )
+    with col_c2:
+        # Busca ciclos existentes no projeto para facilitar o filtro rápido
+        existing_cycles_res = supabase.table("test_cases").select("test_cycle").eq("project_id", project_id).execute()
+        cycles_list = sorted(list(set([row.get("test_cycle", "Geral") for row in (existing_cycles_res.data or [])])))
+        if "Geral" not in cycles_list:
+            cycles_list.insert(0, "Geral")
+
+    # --- GERAÇÃO EM MASSA VIA IA ---
     with st.expander("🚀 Geração Inteligente de Suíte Completa via IA (Múltiplos Testes)", expanded=False):
-        st.info("💡 A IA fará a leitura completa do documento/PDF do projeto e gerará automaticamente uma suíte robusta com vários casos de teste cobrindo todas as funcionalidades identificadas.")
+        st.info(f"💡 A IA fará a leitura completa do documento do projeto e gerará a suíte atribuindo ao ciclo: **{current_cycle}**")
         
         foco_lote = st.text_input("Foco opcional para a suíte (ex: Priorizar testes de segurança e login):", key="batch_ai_foco")
         
@@ -22,10 +47,8 @@ def render_test_cases_tab(project_id: str):
                 if foco_lote.strip():
                     query_lote += f" | Foco da suíte: {foco_lote}"
                 
-                # Solicitamos uma lista em lote para a IA
                 data = generate_istqb_content("test_cases_batch", query_lote)
                 
-                # Se a IA retornar uma lista de testes
                 if data and isinstance(data, list):
                     sucesso_count = 0
                     for item in data:
@@ -36,7 +59,8 @@ def render_test_cases_tab(project_id: str):
                             "preconditions": item.get("preconditions", ""),
                             "steps": item.get("steps", ""),
                             "expected_result": item.get("expected_result", ""),
-                            "status": "Não Executado"
+                            "status": "Não Executado",
+                            "test_cycle": current_cycle
                         }
                         try:
                             supabase.table("test_cases").insert(payload).execute()
@@ -45,7 +69,7 @@ def render_test_cases_tab(project_id: str):
                             pass
                     
                     if sucesso_count > 0:
-                        st.success(f"Suíte gerada com sucesso! {sucesso_count} casos de teste adicionados ao projeto.")
+                        st.success(f"Suíte gerada com sucesso! {sucesso_count} casos de teste adicionados ao ciclo `{current_cycle}`.")
                         st.rerun()
                     else:
                         st.error("Houve um erro ao salvar os casos de teste gerados no Supabase.")
@@ -54,12 +78,13 @@ def render_test_cases_tab(project_id: str):
 
     st.divider()
 
+    # --- CRIAÇÃO INDIVIDUAL ---
     with st.expander("➕ Criar Caso de Teste Individual (Manual ou Unitário com IA)", expanded=False):
         mode = st.radio("Modo de Criação", ["Sem IA (Manual)", "Com IA (Unitário)"], horizontal=True, key="tc_mode_radio")
         test_type = st.selectbox("Tipo de Teste", ["Funcional", "Regressão", "Smoke", "Não-Funcional"], key="tc_type_select")
         
         if mode == "Com IA (Unitário)":
-            st.info("💡 A IA lerá o documento e adequará o caso de teste com base no contexto digitado abaixo.")
+            st.info(f"💡 A IA lerá o documento e salvará no ciclo: **{current_cycle}**")
             user_story = st.text_area("O que deseja testar? (ex: tela de login, fluxo de carrinho...):", placeholder="Ex: Validar se o usuário consegue logar com credenciais inválidas...", key="tc_ai_prompt")
             
             if st.button("✨ Gerar e Salvar Caso de Teste via IA", type="primary", key="btn_gen_tc_ai"):
@@ -78,7 +103,8 @@ def render_test_cases_tab(project_id: str):
                             "preconditions": data.get("preconditions", ""),
                             "steps": data.get("steps", ""),
                             "expected_result": data.get("expected_result", ""),
-                            "status": "Não Executado"
+                            "status": "Não Executado",
+                            "test_cycle": current_cycle
                         }
                         
                         try:
@@ -104,7 +130,8 @@ def render_test_cases_tab(project_id: str):
                             "preconditions": preconditions, 
                             "steps": steps,
                             "expected_result": expected_result, 
-                            "status": "Não Executado"
+                            "status": "Não Executado",
+                            "test_cycle": current_cycle
                         }
                         try:
                             supabase.table("test_cases").insert(payload).execute()
@@ -117,27 +144,35 @@ def render_test_cases_tab(project_id: str):
 
     st.divider()
     
-    # --- FILTRO E LISTAGEM EXPANSÍVEL ---
+    # --- FILTROS DE SUÍTE (TIPO E CICLO) ---
     st.markdown("### Suíte de Testes")
-    filter_type = st.selectbox("Filtrar por Tipo:", ["Todos", "Funcional", "Regressão", "Smoke", "Não-Funcional"], key="tc_filter_select")
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        filter_cycle = st.selectbox("Filtrar por Ciclo:", ["Todos"] + cycles_list, key="tc_filter_cycle")
+    with col_f2:
+        filter_type = st.selectbox("Filtrar por Tipo:", ["Todos", "Funcional", "Regressão", "Smoke", "Não-Funcional"], key="tc_filter_select")
     
     query = supabase.table("test_cases").select("*").eq("project_id", project_id)
+    if filter_cycle != "Todos":
+        query = query.eq("test_cycle", filter_cycle)
     if filter_type != "Todos":
         query = query.eq("test_type", filter_type)
     
     test_cases = query.execute().data or []
         
     if not test_cases:
-        st.info("Nenhum caso de teste encontrado.")
+        st.info("Nenhum caso de teste encontrado com os filtros selecionados.")
     else:
         for tc in test_cases:
             status = tc.get("status", "Não Executado")
+            cycle_tag = tc.get("test_cycle", "Geral")
             status_icon = "🟢" if status == "Passou" else ("🔴" if status == "Falhou" else ("🟡" if status == "Bloqueado" else "⚪"))
 
-            with st.expander(f"{status_icon} [{tc.get('test_type', 'Teste')}] {tc.get('title')}"):
+            with st.expander(f"{status_icon} [{tc.get('test_type', 'Teste')}] ({cycle_tag}) - {tc.get('title')}"):
                 col_det, col_act = st.columns([3, 1])
                 
                 with col_det:
+                    st.markdown(f"**Ciclo:** `{cycle_tag}`")
                     st.markdown(f"**Pré-condições:** {tc.get('preconditions') or 'N/A'}")
                     st.markdown(f"**Passos:**\n\n{tc.get('steps') or 'N/A'}")
                     st.markdown(f"**Resultado Esperado:**\n\n{tc.get('expected_result') or 'N/A'}")
@@ -148,28 +183,31 @@ def render_test_cases_tab(project_id: str):
                     with c_edit:
                         with st.popover("✏️ Editar", key=f"pop_edit_tc_{tc['id']}"):
                             e_title = st.text_input("Título", value=tc['title'], key=f"e_tc_t_{tc['id']}")
+                            e_cycle = st.text_input("Ciclo", value=cycle_tag, key=f"e_tc_c_{tc['id']}")
                             e_pre = st.text_area("Pré-condições", value=tc.get('preconditions', ''), key=f"e_tc_p_{tc['id']}")
                             e_steps = st.text_area("Passos", value=tc.get('steps', ''), key=f"e_tc_s_{tc['id']}")
                             e_exp = st.text_area("Esperado", value=tc.get('expected_result', ''), key=f"e_tc_e_{tc['id']}")
                             if st.button("Salvar Alterações", key=f"btn_tc_edit_{tc['id']}"):
                                 supabase.table("test_cases").update({
-                                    "title": e_title, "preconditions": e_pre, "steps": e_steps, "expected_result": e_exp
+                                    "title": e_title, "test_cycle": e_cycle, "preconditions": e_pre, "steps": e_steps, "expected_result": e_exp
                                 }).eq('id', tc['id']).execute()
                                 st.rerun()
 
                     with c_clone:
-                        if st.button("📋 Clonar Ciclo", key=f"btn_tc_clone_{tc['id']}"):
+                        if st.button("📋 Clonar para Regressão", key=f"btn_tc_clone_{tc['id']}", help="Duplica o teste como Regressão corrigindo repetições no título"):
+                            new_title = format_regression_title(tc['title'])
                             clone_payload = {
                                 "project_id": project_id,
                                 "test_type": "Regressão",
-                                "title": f"[Regressão] {tc['title']}",
+                                "title": new_title,
                                 "preconditions": tc.get('preconditions', ''),
                                 "steps": tc.get('steps', ''),
                                 "expected_result": tc.get('expected_result', ''),
-                                "status": "Não Executado"
+                                "status": "Não Executado",
+                                "test_cycle": current_cycle  # Joga para o ciclo atual de trabalho
                             }
                             supabase.table("test_cases").insert(clone_payload).execute()
-                            st.success("Caso de teste clonado para regressão!")
+                            st.success("Caso de teste clonado para regressão com sucesso!")
                             st.rerun()
                     
                     with c_del:
