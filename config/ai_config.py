@@ -23,9 +23,10 @@ FREE_MODELS = {
         "openai/gpt-oss-20b"
     ],
     "openrouter": [
-        "google/gemma-4-31b-it:free",     # 🏆 Excelente para JSON estrito e BDD
-        "google/gemma-4-26b-a4b-it:free",   # Excelente alternativa leve
         "cohere/north-mini-code:free",
+        "openai/gpt-oss-20b:free",
+        "google/gemma-4-31b-it:free",     # 🏆 Excelente para JSON estrito e BDD
+        "google/gemma-4-26b-a4b-it:free"   # Excelente alternativa leve
     ],
     "gemini": [
         "gemini-2.0-flash",
