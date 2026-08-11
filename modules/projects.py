@@ -64,25 +64,30 @@ def render_projects_page():
                                 if new_file is not None:
                                     file_name = new_file.name
                                     try:
-                                        file_content = new_file.read().decode("utf-8", errors="ignore")
+                                        # Truncamento de segurança para evitar estouro de buffer no Supabase (limite seguro de ~50k caracteres)
+                                        raw_bytes = new_file.read()
+                                        file_content = raw_bytes.decode("utf-8", errors="ignore")[:50000]
                                     except Exception:
                                         file_content = ""
 
                                 if new_text.strip():
                                     if file_content:
-                                        file_content += f"\n\n{new_text}"
+                                        file_content += f"\n\n{new_text[:20000]}"
                                     else:
-                                        file_content = new_text
+                                        file_content = new_text[:50000]
                                         file_name = f"Nota de Texto - {proj['name']}"
 
                                 if file_content.strip():
-                                    supabase.table("project_documents").insert({
-                                        "project_id": proj['id'],
-                                        "file_name": file_name,
-                                        "file_content": file_content
-                                    }).execute()
-                                    st.success("Documento salvo com sucesso na base do projeto!")
-                                    st.rerun()
+                                    try:
+                                        supabase.table("project_documents").insert({
+                                            "project_id": proj['id'],
+                                            "file_name": file_name,
+                                            "file_content": file_content
+                                        }).execute()
+                                        st.success("Documento salvo com sucesso na base do projeto!")
+                                        st.rerun()
+                                    except Exception as db_err:
+                                        st.error(f"Erro ao salvar no banco de dados: {db_err}")
                                 else:
                                     st.warning("Insira um texto ou envie um arquivo válido.")
 
@@ -131,7 +136,7 @@ def render_projects_page():
                         "description": p_desc
                     }).execute()
                     
-                    # Se criou com sucesso e há dados de documento/texto, salva na tabela de documentos
+                    # Se criou com sucesso e há dados de documento/texto, salva na tabela de documentos com tratamento de segurança
                     if res.data and (uploaded_file is not None or p_raw_text.strip()):
                         new_proj_id = res.data[0]['id']
                         file_name = "Documento Inicial"
@@ -140,23 +145,27 @@ def render_projects_page():
                         if uploaded_file is not None:
                             file_name = uploaded_file.name
                             try:
-                                file_content = uploaded_file.read().decode("utf-8", errors="ignore")
+                                raw_bytes = uploaded_file.read()
+                                file_content = raw_bytes.decode("utf-8", errors="ignore")[:50000]
                             except Exception:
                                 file_content = ""
 
                         if p_raw_text.strip():
                             if file_content:
-                                file_content += f"\n\n{p_raw_text}"
+                                file_content += f"\n\n{p_raw_text[:20000]}"
                             else:
-                                file_content = p_raw_text
+                                file_content = p_raw_text[:50000]
                                 file_name = "Contexto Inicial"
 
                         if file_content.strip():
-                            supabase.table("project_documents").insert({
-                                "project_id": new_proj_id,
-                                "file_name": file_name,
-                                "file_content": file_content
-                            }).execute()
+                            try:
+                                supabase.table("project_documents").insert({
+                                    "project_id": new_proj_id,
+                                    "file_name": file_name,
+                                    "file_content": file_content
+                                }).execute()
+                            except Exception as doc_insert_err:
+                                st.warning(f"Projeto criado, mas houve falha ao anexar o documento: {doc_insert_err}")
 
                     st.success("Projeto criado e documentação vinculada com sucesso!")
                     st.rerun()
