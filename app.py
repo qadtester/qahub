@@ -1,7 +1,7 @@
 import streamlit as st
-from modules import auth, projects, requirements, testing, metrics
+from modules import auth, projects, requirements, testing, metrics, admin_panel
 from config.database import supabase
-from config.ai_config import render_ai_provider_selector
+from config.ai_config import render_ai_provider_selector, is_master_user
 
 # ==============================================================================
 # 1. CONFIGURAÇÃO DA PÁGINA
@@ -124,7 +124,7 @@ with st.sidebar:
     st.subheader("🧭 Navegação")
     page_options = [
         "📁 Gestão de Projetos",
-        "📝 Requisitos",
+        "📋 Requisitos",
         "🧪 Módulo de Testes",
         "📊 Métricas & Exportação",
     ]
@@ -133,16 +133,20 @@ with st.sidebar:
     if user_info.get("role") == "admin":
         page_options.append("👥 Gestão de Equipe")
 
+    # Adiciona o Painel Master estritamente se o usuário logado for o Master
+    if is_master_user():
+        page_options.append("👑 Painel Master")
+
     page = st.radio("Ir para:", page_options)
 
 # ==============================================================================
 # 5. CARREGAMENTO DO PROJETO ATIVO
 # ==============================================================================
 active_project = None
-if page != "👥 Gestão de Equipe":
+if page not in ["👥 Gestão de Equipe", "👑 Painel Master"]:
     active_project = projects.render_project_selector()
     
-    if not active_project and page in ["📝 Requisitos", "🧪 Módulo de Testes", "📊 Métricas & Exportação"]:
+    if not active_project and page in ["📋 Requisitos", "🧪 Módulo de Testes", "📊 Métricas & Exportação"]:
         st.warning("⚠️ **Nenhum projeto selecionado!**")
         st.info("Por favor, selecione ou crie um projeto no menu lateral (ou no módulo **Gestão de Projetos**) para prosseguir.")
         st.stop()
@@ -153,24 +157,26 @@ if page != "👥 Gestão de Equipe":
 if page == "📁 Gestão de Projetos":
     projects.render_projects_page()
 
-elif page == "📝 Requisitos":
+elif page == "📋 Requisitos":
     requirements.render_requirements_module()
 
 elif page == "🧪 Módulo de Testes":
-    testing.render_testing_module(active_project["id"])
+    if active_project:
+        testing.render_testing_module(active_project["id"])
 
 elif page == "📊 Métricas & Exportação":
-    project_id = active_project["id"]
-    try:
-        test_cases = supabase.table("test_cases").select("*").eq("project_id", project_id).execute().data or []
-        bug_reports = supabase.table("bug_reports").select("*").eq("project_id", project_id).execute().data or []
-        risk_matrix = supabase.table("risk_matrix").select("*").eq("project_id", project_id).execute().data or []
-        user_stories = supabase.table("user_stories").select("*").eq("project_id", project_id).execute().data or []
-    except Exception as e:
-        st.error(f"Erro ao carregar métricas do Supabase: {e}")
-        test_cases, bug_reports, risk_matrix, user_stories = [], [], [], []
+    if active_project:
+        project_id = active_project["id"]
+        try:
+            test_cases = supabase.table("test_cases").select("*").eq("project_id", project_id).execute().data or []
+            bug_reports = supabase.table("bug_reports").select("*").eq("project_id", project_id).execute().data or []
+            risk_matrix = supabase.table("risk_matrix").select("*").eq("project_id", project_id).execute().data or []
+            user_stories = supabase.table("user_stories").select("*").eq("project_id", project_id).execute().data or []
+        except Exception as e:
+            st.error(f"Erro ao carregar métricas do Supabase: {e}")
+            test_cases, bug_reports, risk_matrix, user_stories = [], [], [], []
 
-    metrics.render_metrics_dashboard(test_cases, bug_reports, risk_matrix, user_stories)
+        metrics.render_metrics_dashboard(test_cases, bug_reports, risk_matrix, user_stories)
 
 elif page == "👥 Gestão de Equipe":
     st.title("👥 Gestão de Membros da Organização")
@@ -211,3 +217,9 @@ elif page == "👥 Gestão de Equipe":
                     st.rerun()
             else:
                 st.caption("Você (Admin)")
+
+elif page == "👑 Painel Master":
+    if is_master_user():
+        admin_panel.render_master_admin_panel()
+    else:
+        st.error("Acesso restrito.")
