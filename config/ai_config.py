@@ -57,20 +57,25 @@ def _get_secret_or_env(key: str) -> Optional[str]:
     return None
 
 
-def is_admin_user() -> bool:
-    """Verifica se o usuário logado atualmente é o Administrador do sistema."""
+def is_master_user() -> bool:
+    """Verifica se o usuário logado atualmente é o Usuário Master do sistema."""
     user_info = st.session_state.get("user", {})
     logged_email = user_info.get("email", "").strip().lower()
-    admin_email = (_get_secret_or_env("ADMIN_EMAIL") or "").strip().lower()
+    master_email = (_get_secret_or_env("MASTER_EMAIL") or "").strip().lower()
     
-    return bool(logged_email and admin_email and logged_email == admin_email)
+    return bool(logged_email and master_email and logged_email == master_email)
+
+
+def is_admin_user() -> bool:
+    """Mantido por retrocompatibilidade com outros módulos do projeto."""
+    return is_master_user()
 
 
 def get_active_api_key(provider: str) -> Optional[str]:
     """
     Recupera a chave de API respeitando as regras de isolamento:
     1. Tenta buscar a chave individual informada pelo usuário na UI.
-    2. Se não houver chave na UI, verifica se é o ADMIN. Apenas o ADMIN acessa as chaves salvas.
+    2. Se não houver chave na UI, verifica se é o MASTER. Apenas o MASTER acessa as chaves salvas globais.
     """
     user_keys = st.session_state.get("user_api_keys", {})
     user_provided_key = user_keys.get(provider)
@@ -79,8 +84,8 @@ def get_active_api_key(provider: str) -> Optional[str]:
     if user_provided_key:
         return user_provided_key
 
-    # 2. Se for o USUÁRIO ADMINISTRADOR, libera as chaves globais salvas no .env ou st.secrets
-    if is_admin_user():
+    # 2. Se for o USUÁRIO MASTER, libera as chaves globais salvas no .env ou st.secrets
+    if is_master_user():
         if provider == "groq":
             return _get_secret_or_env("GROQ_API_KEY")
         elif provider == "openrouter":
@@ -149,8 +154,8 @@ def render_ai_provider_selector():
     else:
         st.session_state["selected_ai_model"] = None
 
-    if is_admin_user():
-        st.caption("👑 **Perfil Admin:** Suas chaves salvas (.env / Secrets) estão ativas.")
+    if is_master_user():
+        st.caption("👑 **Perfil Master:** Suas chaves globais (.env / Secrets) estão ativas.")
     else:
         st.caption("👤 **Perfil Usuário:** Insira sua chave de API pessoal para usar a IA.")
 
@@ -194,7 +199,6 @@ def generate_ai_content(
             res = client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model=target_model,
-                # Removido response_format restritivo para evitar quebrar modelos que não suportam nativamente
             )
             return res.choices[0].message.content
         except Exception as e:
