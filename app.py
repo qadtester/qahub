@@ -1,7 +1,7 @@
 import streamlit as st
-from modules import auth, projects, requirements, testing, metrics, admin_panel
+from modules import auth, projects, requirements, testing, metrics
 from config.database import supabase
-from config.ai_config import render_ai_provider_selector, is_master_user
+from config.ai_config import render_ai_provider_selector
 
 # ==============================================================================
 # 1. CONFIGURAÇÃO DA PÁGINA
@@ -67,25 +67,35 @@ with st.sidebar:
     
     st.write(f"👤 **Usuário:** {user_info.get('name', 'Usuário')}")
     st.caption(f"📧 {user_info.get('email', '')}")
-    st.caption(f"🛡️ **Papel na Equipe:** `{user_info.get('role', 'editor')}`")
+    st.caption(f"🛡️ **Papel:** `{user_info.get('role', 'editor')}`")
     
     st.divider()
 
     # --- SELETOR DE EQUIPE / ORGANIZAÇÃO ---
     st.subheader("🏢 Organização Ativa")
     team_options = {t["name"]: t["id"] for t in user_teams}
+    
+    # Validação de segurança para evitar ValueError caso o ID ativo mude ou dessincronize
+    active_team_id = active_team.get("id") if active_team else None
+    if active_team_id in team_options.values():
+        default_index = list(team_options.values()).index(active_team_id)
+    else:
+        default_index = 0
+
     selected_team_name = st.selectbox(
         "Alternar Equipe:", 
         options=list(team_options.keys()), 
-        index=list(team_options.values()).index(active_team["id"])
+        index=default_index
     )
     
-    if team_options[selected_team_name] != st.session_state["current_team_id"]:
+    # Se o usuário trocou de equipe no selectbox, atualiza a sessão e recarrega
+    if team_options[selected_team_name] != st.session_state.get("current_team_id"):
         st.session_state["current_team_id"] = team_options[selected_team_name]
         st.rerun()
 
     st.info(f"🔑 **Código da Equipe:** `{active_team.get('invite_code', 'N/A')}`")
 
+    # Opção para entrar em outra equipe via código diretamente na barra lateral
     with st.expander("➕ Entrar em Outra Equipe"):
         with st.form("sidebar_join_team"):
             new_code = st.text_input("Código de Convite", placeholder="Ex: A1B2C3")
@@ -94,6 +104,7 @@ with st.sidebar:
                     t_lookup = supabase.table("teams").select("id, name").eq("invite_code", new_code.strip().upper()).execute()
                     if t_lookup.data:
                         found_t = t_lookup.data[0]
+                        # Insere na tabela de membros (caso não exista, faz o upsert)
                         supabase.table("team_members").upsert({
                             "team_id": found_t["id"],
                             "user_id": user_info["id"],
@@ -121,18 +132,14 @@ with st.sidebar:
     st.subheader("🧭 Navegação")
     page_options = [
         "📁 Gestão de Projetos",
-        "📋 Requisitos",
+        "📝 Requisitos",
         "🧪 Módulo de Testes",
         "📊 Métricas & Exportação",
     ]
     
-    # Administrador da Equipe gerencia os membros da respectiva organização
+    # Adiciona aba de gestão de membros se for admin da equipe ativa
     if user_info.get("role") == "admin":
         page_options.append("👥 Gestão de Equipe")
-
-    # Acesso Master global baseado rigorosamente no e-mail MASTER_EMAIL
-    if is_master_user():
-        page_options.append("👑 Painel Master")
 
     page = st.radio("Ir para:", page_options)
 
@@ -140,10 +147,10 @@ with st.sidebar:
 # 5. CARREGAMENTO DO PROJETO ATIVO
 # ==============================================================================
 active_project = None
-if page not in ["👥 Gestão de Equipe", "👑 Painel Master"]:
+if page != "👥 Gestão de Equipe":
     active_project = projects.render_project_selector()
     
-    if not active_project and page in ["📋 Requisitos", "🧪 Módulo de Testes", "📊 Métricas & Exportação"]:
+    if not active_project and page in ["📝 Requisitos", "🧪 Módulo de Testes", "📊 Métricas & Exportação"]:
         st.warning("⚠️ **Nenhum projeto selecionado!**")
         st.info("Por favor, selecione ou crie um projeto no menu lateral (ou no módulo **Gestão de Projetos**) para prosseguir.")
         st.stop()
@@ -154,31 +161,30 @@ if page not in ["👥 Gestão de Equipe", "👑 Painel Master"]:
 if page == "📁 Gestão de Projetos":
     projects.render_projects_page()
 
-elif page == "📋 Requisitos":
+elif page == "📝 Requisitos":
     requirements.render_requirements_module()
 
 elif page == "🧪 Módulo de Testes":
-    if active_project:
-        testing.render_testing_module(active_project["id"])
+    testing.render_testing_module(active_project["id"])
 
 elif page == "📊 Métricas & Exportação":
-    if active_project:
-        project_id = active_project["id"]
-        try:
-            test_cases = supabase.table("test_cases").select("*").eq("project_id", project_id).execute().data or []
-            bug_reports = supabase.table("bug_reports").select("*").eq("project_id", project_id).execute().data or []
-            risk_matrix = supabase.table("risk_matrix").select("*").eq("project_id", project_id).execute().data or []
-            user_stories = supabase.table("user_stories").select("*").eq("project_id", project_id).execute().data or []
-        except Exception as e:
-            st.error(f"Erro ao carregar métricas do Supabase: {e}")
-            test_cases, bug_reports, risk_matrix, user_stories = [], [], [], []
+    project_id = active_project["id"]
+    try:
+        test_cases = supabase.table("test_cases").select("*").eq("project_id", project_id).execute().data or []
+        bug_reports = supabase.table("bug_reports").select("*").eq("project_id", project_id).execute().data or []
+        risk_matrix = supabase.table("risk_matrix").select("*").eq("project_id", project_id).execute().data or []
+        user_stories = supabase.table("user_stories").select("*").eq("project_id", project_id).execute().data or []
+    except Exception as e:
+        st.error(f"Erro ao carregar métricas do Supabase: {e}")
+        test_cases, bug_reports, risk_matrix, user_stories = [], [], [], []
 
-        metrics.render_metrics_dashboard(test_cases, bug_reports, risk_matrix, user_stories)
+    metrics.render_metrics_dashboard(test_cases, bug_reports, risk_matrix, user_stories)
 
 elif page == "👥 Gestão de Equipe":
     st.title("👥 Gestão de Membros da Organização")
-    st.write(f"Gerencie os usuários vinculados à organização ativa **{active_team.get('name')}**.")
+    st.write(f"Gerencie os usuários e permissões da organização ativa **{active_team.get('name')}**.")
     
+    # Busca membros na tabela team_members cruzando com a tabela users
     members_res = (
         supabase.table("team_members")
         .select("role, users(id, name, email, created_at)")
@@ -200,20 +206,38 @@ elif page == "👥 Gestão de Equipe":
             st.write(f"**{member['name']}**")
             st.caption(member['email'])
         with cols[1]:
-            st.write(f"Papel: `{member['role']}`")
+            # Se for o próprio usuário logado ou dono, exibe o cargo de forma fixa ou controlada
+            is_self = (member["id"] == user_info["id"])
+            
+            # Opção de alterar o papel diretamente na interface
+            available_roles = ["editor", "admin"]
+            current_role_index = available_roles.index(member["role"]) if member["role"] in available_roles else 0
+            
+            new_role = st.selectbox(
+                "Papel", 
+                options=available_roles, 
+                index=current_role_index, 
+                key=f"role_{member['id']}",
+                label_visibility="collapsed"
+            )
+            
+            # Se o admin mudou o papel na interface, atualiza no Supabase
+            if new_role != member["role"]:
+                if is_self:
+                    st.warning("Você não pode alterar seu próprio cargo.")
+                else:
+                    supabase.table("team_members").update({"role": new_role}).eq("team_id", active_team["id"]).eq("user_id", member["id"]).execute()
+                    st.success(f"Cargo de {member['name']} alterado para {new_role}!")
+                    st.rerun()
+                    
         with cols[2]:
-            st.write(f"Criado em: {member['created_at'][:10] if member.get('created_at') else ''}")
+            st.write(f"Entrou em: {member['created_at'][:10] if member.get('created_at') else ''}")
         with cols[3]:
-            if member["id"] != user_info["id"]:
+            # Impede o admin de se remover a si mesmo por engano nesta tela
+            if not is_self:
                 if st.button("🗑️ Remover", key=f"rm_mem_{member['id']}"):
                     supabase.table("team_members").delete().eq("team_id", active_team["id"]).eq("user_id", member["id"]).execute()
                     st.success(f"Usuário {member['name']} removido da equipe.")
                     st.rerun()
             else:
-                st.caption("Você (Admin)")
-
-elif page == "👑 Painel Master":
-    if is_master_user():
-        admin_panel.render_master_admin_panel()
-    else:
-        st.error("Acesso restrito.")
+                st.caption("Você (Ativo)")
