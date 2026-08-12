@@ -37,8 +37,8 @@ def render_auth_page():
     with tab_login:
         st.subheader("Acesse sua Conta")
         with st.form("login_form"):
-            email = st.text_input("E-mail")
-            password = st.text_input("Senha", type="password")
+            email = st.text_input("E-mail :red[*]")
+            password = st.text_input("Senha :red[*]", type="password")
             submit_login = st.form_submit_button("Entrar", type="primary")
 
             if submit_login:
@@ -71,16 +71,16 @@ def render_auth_page():
                     else:
                         st.error("E-mail não encontrado.")
                 else:
-                    st.error("Preencha todos os campos.")
+                    st.error("Preencha todos os campos obrigatórios.")
 
     # --- ABA DE CADASTRO ---
     with tab_register:
         st.subheader("Crie sua Conta e sua Equipe Principal")
         with st.form("register_form"):
-            name = st.text_input("Nome Completo")
-            email = st.text_input("E-mail de Cadastro")
-            password = st.text_input("Senha", type="password")
-            team_name = st.text_input("Nome da sua Equipe/Empresa Principal", placeholder="Ex: QA Solutions")
+            name = st.text_input("Nome Completo :red[*]")
+            email = st.text_input("E-mail de Cadastro :red[*]")
+            password = st.text_input("Senha :red[*]", type="password")
+            team_name = st.text_input("Nome da sua Equipe/Empresa Principal :red[*]", placeholder="Ex: QA Solutions")
             
             submit_register = st.form_submit_button("Criar Conta", type="primary")
 
@@ -91,48 +91,53 @@ def render_auth_page():
                     if check_email.data:
                         st.error("Este e-mail já está cadastrado.")
                     else:
-                        # 1. Cria a Equipe
-                        invite_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-                        team_payload = {
-                            "name": team_name.strip(),
-                            "invite_code": invite_code
-                        }
-                        team_res = supabase.table("teams").insert(team_payload).execute()
-                        
-                        if team_res.data:
-                            new_team = team_res.data[0]
-                            
-                            # 2. Cria o Usuário
-                            user_payload = {
-                                "name": name.strip(),
-                                "email": email.strip(),
-                                "password_hash": hash_password(password),
-                                "team_id": new_team["id"], # Mantém retrocompatibilidade
-                                "role": "admin"
+                        try:
+                            # 1. Cria a Equipe
+                            invite_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                            team_payload = {
+                                "name": team_name.strip(),
+                                "invite_code": invite_code
                             }
-                            user_res = supabase.table("users").insert(user_payload).execute()
+                            team_res = supabase.table("teams").insert(team_payload).execute()
                             
-                            if user_res.data:
-                                new_user = user_res.data[0]
+                            if team_res.data:
+                                new_team = team_res.data[0]
                                 
-                                # 3. Vincula na tabela N para N como admin da própria equipe
-                                supabase.table("team_members").insert({
-                                    "team_id": new_team["id"],
-                                    "user_id": new_user["id"],
+                                # 2. Cria o Usuário
+                                user_payload = {
+                                    "name": name.strip(),
+                                    "email": email.strip(),
+                                    "password_hash": hash_password(password),
+                                    "team_id": new_team["id"], # Mantém retrocompatibilidade
                                     "role": "admin"
-                                }).execute()
+                                }
+                                user_res = supabase.table("users").insert(user_payload).execute()
                                 
-                                # Atualiza o owner_id da equipe
-                                supabase.table("teams").update({"owner_id": new_user["id"]}).eq("id", new_team["id"]).execute()
+                                if user_res.data:
+                                    new_user = user_res.data[0]
+                                    
+                                    # 3. Vincula na tabela N para N como admin da própria equipe
+                                    supabase.table("team_members").insert({
+                                        "team_id": new_team["id"],
+                                        "user_id": new_user["id"],
+                                        "role": "admin"
+                                    }).execute()
+                                    
+                                    # Atualiza o owner_id da equipe
+                                    supabase.table("teams").update({"owner_id": new_user["id"]}).eq("id", new_team["id"]).execute()
 
-                                st.session_state["user"] = new_user
-                                st.session_state["logged_in"] = True
-                                st.session_state["current_team_id"] = new_team["id"]
-                                
-                                st.success(f"Conta criada com sucesso! Sua equipe '{team_name}' foi configurada.")
-                                st.rerun()
-                        else:
-                            st.error("Erro ao criar equipe.")
+                                    st.session_state["user"] = new_user
+                                    st.session_state["logged_in"] = True
+                                    st.session_state["current_team_id"] = new_team["id"]
+                                    
+                                    st.success(f"Conta criada com sucesso! Sua equipe '{team_name}' foi configurada.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao criar usuário.")
+                            else:
+                                st.error("Erro ao criar equipe.")
+                        except Exception as e:
+                            st.error(f"Erro no cadastro: {e}")
                 else:
                     st.error("Preencha todos os campos obrigatórios.")
 
@@ -149,7 +154,7 @@ def render_team_onboarding():
     with c1:
         st.subheader("✨ Criar Nova Equipe")
         with st.form("create_extra_team_form"):
-            new_t_name = st.text_input("Nome da Nova Equipe")
+            new_t_name = st.text_input("Nome da Nova Equipe :red[*]")
             if st.form_submit_button("Criar Equipe"):
                 if new_t_name.strip():
                     invite_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -170,7 +175,7 @@ def render_team_onboarding():
     with c2:
         st.subheader("🔗 Entrar em Equipe via Código")
         with st.form("join_extra_team_form"):
-            code_input = st.text_input("Código de Convite (ex: A1B2C3)")
+            code_input = st.text_input("Código de Convite (ex: A1B2C3) :red[*]")
             if st.form_submit_button("Entrar na Equipe"):
                 if code_input.strip():
                     team_res = supabase.table("teams").select("*").eq("invite_code", code_input.strip().upper()).execute()
