@@ -1,7 +1,7 @@
 import streamlit as st
-from modules import auth, projects, requirements, testing, metrics
+from modules import auth, projects, requirements, testing, metrics, admin_panel
 from config.database import supabase
-from config.ai_config import render_ai_provider_selector
+from config.ai_config import render_ai_provider_selector, is_master_user
 
 # ==============================================================================
 # 1. CONFIGURAÇÃO DA PÁGINA
@@ -40,24 +40,25 @@ if user_teams_res.data:
             team_info["user_role"] = item["role"]
             user_teams.append(team_info)
 
-# Se o usuário não está vinculado a nenhuma equipe, exibe o onboarding de criação/entrada
-if not user_teams:
+# Se o usuário não está vinculado a nenhuma equipe (exceto se for Master puro), exibe o onboarding
+if not user_teams and not is_master_user():
     auth.render_team_onboarding()
     st.stop()
 
 # Gerenciamento da Equipe Ativa na Sessão
-if "current_team_id" not in st.session_state or not st.session_state["current_team_id"]:
-    st.session_state["current_team_id"] = user_teams[0]["id"]
+if user_teams:
+    if "current_team_id" not in st.session_state or not st.session_state["current_team_id"]:
+        st.session_state["current_team_id"] = user_teams[0]["id"]
 
-# Garante que o current_team_id pertence de fato às equipes do usuário
-valid_team_ids = [t["id"] for t in user_teams]
-if st.session_state["current_team_id"] not in valid_team_ids:
-    st.session_state["current_team_id"] = user_teams[0]["id"]
+    valid_team_ids = [t["id"] for t in user_teams]
+    if st.session_state["current_team_id"] not in valid_team_ids:
+        st.session_state["current_team_id"] = user_teams[0]["id"]
 
-# Define os dados da equipe ativa atual
-active_team = next((t for t in user_teams if t["id"] == st.session_state["current_team_id"]), user_teams[0])
-user_info["team_id"] = active_team["id"]
-user_info["role"] = active_team.get("user_role", "editor")
+    active_team = next((t for t in user_teams if t["id"] == st.session_state["current_team_id"]), user_teams[0])
+    user_info["team_id"] = active_team["id"]
+    user_info["role"] = active_team.get("user_role", "editor")
+else:
+    active_team = {"name": "Painel Master Global", "invite_code": "MASTER"}
 
 # ==============================================================================
 # 4. SIDEBAR (PERFIL, SELETOR DE EQUIPE, PROJETO E NAVEGAÇÃO)
@@ -67,57 +68,58 @@ with st.sidebar:
     
     st.write(f"👤 **Usuário:** {user_info.get('name', 'Usuário')}")
     st.caption(f"📧 {user_info.get('email', '')}")
-    st.caption(f"🛡️ **Papel:** `{user_info.get('role', 'editor')}`")
+    
+    if is_master_user():
+        st.caption("👑 **Papel:** `MASTER`")
+    else:
+        st.caption(f"🛡️ **Papel:** `{user_info.get('role', 'editor')}`")
     
     st.divider()
 
     # --- SELETOR DE EQUIPE / ORGANIZAÇÃO ---
-    st.subheader("🏢 Organização Ativa")
-    team_options = {t["name"]: t["id"] for t in user_teams}
-    
-    # Validação de segurança para evitar ValueError caso o ID ativo mude ou dessincronize
-    active_team_id = active_team.get("id") if active_team else None
-    if active_team_id in team_options.values():
-        default_index = list(team_options.values()).index(active_team_id)
-    else:
-        default_index = 0
+    if user_teams:
+        st.subheader("🏢 Organização Ativa")
+        team_options = {t["name"]: t["id"] for t in user_teams}
+        
+        active_team_id = active_team.get("id") if active_team else None
+        if active_team_id in team_options.values():
+            default_index = list(team_options.values()).index(active_team_id)
+        else:
+            default_index = 0
 
-    selected_team_name = st.selectbox(
-        "Alternar Equipe:", 
-        options=list(team_options.keys()), 
-        index=default_index
-    )
-    
-    # Se o usuário trocou de equipe no selectbox, atualiza a sessão e recarrega
-    if team_options[selected_team_name] != st.session_state.get("current_team_id"):
-        st.session_state["current_team_id"] = team_options[selected_team_name]
-        st.rerun()
+        selected_team_name = st.selectbox(
+            "Alternar Equipe:", 
+            options=list(team_options.keys()), 
+            index=default_index
+        )
+        
+        if team_options[selected_team_name] != st.session_state.get("current_team_id"):
+            st.session_state["current_team_id"] = team_options[selected_team_name]
+            st.rerun()
 
-    st.info(f"🔑 **Código da Equipe:** `{active_team.get('invite_code', 'N/A')}`")
+        st.info(f"🔑 **Código da Equipe:** `{active_team.get('invite_code', 'N/A')}`")
 
-    # Opção para entrar em outra equipe via código diretamente na barra lateral
-    with st.expander("➕ Entrar em Outra Equipe"):
-        with st.form("sidebar_join_team"):
-            new_code = st.text_input("Código de Convite", placeholder="Ex: A1B2C3")
-            if st.form_submit_button("Vincular Equipe"):
-                if new_code.strip():
-                    t_lookup = supabase.table("teams").select("id, name").eq("invite_code", new_code.strip().upper()).execute()
-                    if t_lookup.data:
-                        found_t = t_lookup.data[0]
-                        # Insere na tabela de membros (caso não exista, faz o upsert)
-                        supabase.table("team_members").upsert({
-                            "team_id": found_t["id"],
-                            "user_id": user_info["id"],
-                            "role": "editor"
-                        }, on_conflict="team_id,user_id").execute()
-                        
-                        st.session_state["current_team_id"] = found_t["id"]
-                        st.success(f"Vinculado à equipe '{found_t['name']}' com sucesso!")
-                        st.rerun()
+        with st.expander("➕ Entrar em Outra Equipe"):
+            with st.form("sidebar_join_team"):
+                new_code = st.text_input("Código de Convite", placeholder="Ex: A1B2C3")
+                if st.form_submit_button("Vincular Equipe"):
+                    if new_code.strip():
+                        t_lookup = supabase.table("teams").select("id, name").eq("invite_code", new_code.strip().upper()).execute()
+                        if t_lookup.data:
+                            found_t = t_lookup.data[0]
+                            supabase.table("team_members").upsert({
+                                "team_id": found_t["id"],
+                                "user_id": user_info["id"],
+                                "role": "editor"
+                            }, on_conflict="team_id,user_id").execute()
+                            
+                            st.session_state["current_team_id"] = found_t["id"]
+                            st.success(f"Vinculado à equipe '{found_t['name']}' com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Código de convite inválido.")
                     else:
-                        st.error("Código de convite inválido.")
-                else:
-                    st.error("Digite o código.")
+                        st.error("Digite o código.")
 
     if st.button("🚪 Sair / Logout", use_container_width=True):
         auth.logout()
@@ -138,8 +140,12 @@ with st.sidebar:
     ]
     
     # Adiciona aba de gestão de membros se for admin da equipe ativa
-    if user_info.get("role") == "admin":
+    if user_info.get("role") == "admin" and not is_master_user():
         page_options.append("👥 Gestão de Equipe")
+
+    # Adiciona a opção exclusiva do Painel Administrativo Master se for o usuário Master
+    if is_master_user():
+        page_options.append("👑 Painel Admin Master")
 
     page = st.radio("Ir para:", page_options)
 
@@ -147,7 +153,7 @@ with st.sidebar:
 # 5. CARREGAMENTO DO PROJETO ATIVO
 # ==============================================================================
 active_project = None
-if page != "👥 Gestão de Equipe":
+if page not in ["👥 Gestão de Equipe", "👑 Painel Admin Master"]:
     active_project = projects.render_project_selector()
     
     if not active_project and page in ["📝 Requisitos", "🧪 Módulo de Testes", "📊 Métricas & Exportação"]:
@@ -184,7 +190,6 @@ elif page == "👥 Gestão de Equipe":
     st.title("👥 Gestão de Membros da Organização")
     st.write(f"Gerencie os usuários e permissões da organização ativa **{active_team.get('name')}**.")
     
-    # Busca membros na tabela team_members cruzando com a tabela users
     members_res = (
         supabase.table("team_members")
         .select("role, users(id, name, email, created_at)")
@@ -206,10 +211,7 @@ elif page == "👥 Gestão de Equipe":
             st.write(f"**{member['name']}**")
             st.caption(member['email'])
         with cols[1]:
-            # Se for o próprio usuário logado ou dono, exibe o cargo de forma fixa ou controlada
             is_self = (member["id"] == user_info["id"])
-            
-            # Opção de alterar o papel diretamente na interface
             available_roles = ["editor", "admin"]
             current_role_index = available_roles.index(member["role"]) if member["role"] in available_roles else 0
             
@@ -221,7 +223,6 @@ elif page == "👥 Gestão de Equipe":
                 label_visibility="collapsed"
             )
             
-            # Se o admin mudou o papel na interface, atualiza no Supabase
             if new_role != member["role"]:
                 if is_self:
                     st.warning("Você não pode alterar seu próprio cargo.")
@@ -233,7 +234,6 @@ elif page == "👥 Gestão de Equipe":
         with cols[2]:
             st.write(f"Entrou em: {member['created_at'][:10] if member.get('created_at') else ''}")
         with cols[3]:
-            # Impede o admin de se remover a si mesmo por engano nesta tela
             if not is_self:
                 if st.button("🗑️ Remover", key=f"rm_mem_{member['id']}"):
                     supabase.table("team_members").delete().eq("team_id", active_team["id"]).eq("user_id", member["id"]).execute()
@@ -241,3 +241,6 @@ elif page == "👥 Gestão de Equipe":
                     st.rerun()
             else:
                 st.caption("Você (Ativo)")
+
+elif page == "👑 Painel Admin Master":
+    admin_panel.render_master_admin_panel()
