@@ -3,6 +3,7 @@ from config.database import supabase
 from config.ai_config import is_master_user
 
 def render_master_admin_panel():
+    # Validação estrita do Usuário Master via MASTER_EMAIL
     if not is_master_user():
         st.error("⛔ Acesso negado. Esta área é restrita exclusivamente ao Usuário Master.")
         return
@@ -29,8 +30,7 @@ def render_master_admin_panel():
                     st.write(f"**ID:** `{u['id']}`")
                     st.write(f"**Papel:** `{u.get('role', 'editor')}`")
                     
-                    # Identifica projetos que pertencem exclusivamente ao usuário (via equipe/owner ou projetos onde ele gerencia)
-                    # No schema atual, projetos estão atrelados a teams. Vamos buscar equipes em que ele é owner ou projetos do time dele.
+                    # Identifica equipes em que ele é owner
                     teams_owned = supabase.table("teams").select("id, name").eq("owner_id", u["id"]).execute().data or []
                     team_ids_owned = [t["id"] for t in teams_owned]
                     
@@ -46,11 +46,10 @@ def render_master_admin_panel():
 
                     st.divider()
                     
-                    # Botão de exclusão com confirmação
+                    # Botão de exclusão com confirmação em cascata
                     del_key = f"del_user_{u['id']}"
                     if st.button(f"🗑️ Excluir Usuário e Dados Relacionados", key=del_key, type="primary"):
                         try:
-                            # 3. EXCLUSÃO EM CASCATA (Cascade Delete) via Código Python
                             # A. Apagar dependências dos projetos exclusivos (Personas, User Stories, Test Cases, Bugs, Riscos, Documentos)
                             for ep in exclusive_projects:
                                 p_id = ep["id"]
@@ -61,7 +60,7 @@ def render_master_admin_panel():
                                 supabase.table("risk_matrix").delete().eq("project_id", p_id).execute()
                                 supabase.table("project_documents").delete().eq("project_id", p_id).execute()
                             
-                            # B. Apagar os projetos exclusivos
+                            # B. Apagar os projetos exclusivos vinculados às equipes do owner
                             if team_ids_owned:
                                 supabase.table("projects").delete().in_("team_id", team_ids_owned).execute()
 
@@ -72,7 +71,7 @@ def render_master_admin_panel():
                             if team_ids_owned:
                                 supabase.table("teams").delete().in_("id", team_ids_owned).execute()
 
-                            # E. Por fim, deletar o registro do usuário
+                            # E. Por fim, deletar o registro principal do usuário
                             supabase.table("users").delete().eq("id", u["id"]).execute()
 
                             st.success(f"Usuário {u['name']} e todos os dados relacionados foram excluídos com sucesso!")
