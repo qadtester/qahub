@@ -24,7 +24,7 @@ def render_test_cases_tab(project_id: str):
     col_c1, col_c2 = st.columns([2, 1])
     with col_c1:
         current_cycle = st.text_input(
-            "🏷️ Ciclo de Teste Atual / Release:", 
+            "🏷️ Ciclo de Teste Atual / Release :red[*]:", 
             value="Geral", 
             help="Ex: Release 1.0, Sprint 12, Pós-Deploy v1.1. Todos os novos testes criados irão para este ciclo."
         )
@@ -42,39 +42,42 @@ def render_test_cases_tab(project_id: str):
         foco_lote = st.text_input("Foco opcional para a suíte (ex: Priorizar testes de segurança e login):", key="batch_ai_foco")
         
         if st.button("✨ Gerar Suíte Completa de Testes com IA", type="primary", key="btn_gen_batch_tc"):
-            with st.spinner("A IA está analisando o documento do projeto e estruturando os casos de teste..."):
-                query_lote = project_id
-                if foco_lote.strip():
-                    query_lote += f" | Foco da suíte: {foco_lote}"
-                
-                data = generate_istqb_content("test_cases_batch", query_lote)
-                
-                if data and isinstance(data, list):
-                    sucesso_count = 0
-                    for item in data:
-                        payload = {
-                            "project_id": project_id,
-                            "test_type": item.get("test_type", "Funcional"),
-                            "title": item.get("title", "Caso de Teste Gerado por IA"),
-                            "preconditions": item.get("preconditions", ""),
-                            "steps": item.get("steps", ""),
-                            "expected_result": item.get("expected_result", ""),
-                            "status": "Não Executado",
-                            "test_cycle": current_cycle
-                        }
-                        try:
-                            supabase.table("test_cases").insert(payload).execute()
-                            sucesso_count += 1
-                        except Exception:
-                            pass
+            if not current_cycle or not current_cycle.strip():
+                st.error("⚠️ O campo 'Ciclo de Teste Atual / Release' é obrigatório para gerar novos conteúdos. Por favor, preencha-o acima.")
+            else:
+                with st.spinner("A IA está analisando o documento do projeto e estruturando os casos de teste..."):
+                    query_lote = project_id
+                    if foco_lote.strip():
+                        query_lote += f" | Foco da suíte: {foco_lote}"
                     
-                    if sucesso_count > 0:
-                        st.success(f"Suíte gerada com sucesso! {sucesso_count} casos de teste adicionados ao ciclo `{current_cycle}`.")
-                        st.rerun()
+                    data = generate_istqb_content("test_cases_batch", query_lote)
+                    
+                    if data and isinstance(data, list):
+                        sucesso_count = 0
+                        for item in data:
+                            payload = {
+                                "project_id": project_id,
+                                "test_type": item.get("test_type", "Funcional"),
+                                "title": item.get("title", "Caso de Teste Gerado por IA"),
+                                "preconditions": item.get("preconditions", ""),
+                                "steps": item.get("steps", ""),
+                                "expected_result": item.get("expected_result", ""),
+                                "status": "Não Executado",
+                                "test_cycle": current_cycle
+                            }
+                            try:
+                                supabase.table("test_cases").insert(payload).execute()
+                                sucesso_count += 1
+                            except Exception:
+                                pass
+                        
+                        if sucesso_count > 0:
+                            st.success(f"Suíte gerada com sucesso! {sucesso_count} casos de teste adicionados ao ciclo `{current_cycle}`.")
+                            st.rerun()
+                        else:
+                            st.error("Houve um erro ao salvar os casos de teste gerados no Supabase.")
                     else:
-                        st.error("Houve um erro ao salvar os casos de teste gerados no Supabase.")
-                else:
-                    st.error("A IA não retornou uma lista válida. Verifique a configuração da IA.")
+                        st.error("A IA não retornou uma lista válida. Verifique a configuração da IA.")
 
     st.divider()
 
@@ -88,33 +91,36 @@ def render_test_cases_tab(project_id: str):
             user_story = st.text_area("O que deseja testar? (ex: tela de login, fluxo de carrinho...):", placeholder="Ex: Validar se o usuário consegue logar com credenciais inválidas...", key="tc_ai_prompt")
             
             if st.button("✨ Gerar e Salvar Caso de Teste via IA", type="primary", key="btn_gen_tc_ai"):
-                with st.spinner("IA lendo o documento e gerando o caso de teste..."):
-                    query_ia = project_id
-                    if user_story.strip():
-                        query_ia += f" | Contexto/Foco: {user_story}"
+                if not current_cycle or not current_cycle.strip():
+                    st.error("⚠️ O campo 'Ciclo de Teste Atual / Release' é obrigatório para gerar novos conteúdos. Por favor, preencha-o acima.")
+                else:
+                    with st.spinner("IA lendo o documento e gerando o caso de teste..."):
+                        query_ia = project_id
+                        if user_story.strip():
+                            query_ia += f" | Contexto/Foco: {user_story}"
 
-                    data = generate_istqb_content("test_case", query_ia)
-                    
-                    if data and isinstance(data, dict):
-                        payload = {
-                            "project_id": project_id, 
-                            "test_type": test_type,
-                            "title": data.get("title", "Caso de Teste Gerado por IA"), 
-                            "preconditions": data.get("preconditions", ""),
-                            "steps": data.get("steps", ""),
-                            "expected_result": data.get("expected_result", ""),
-                            "status": "Não Executado",
-                            "test_cycle": current_cycle
-                        }
+                        data = generate_istqb_content("test_case", query_ia)
                         
-                        try:
-                            supabase.table("test_cases").insert(payload).execute()
-                            st.success("Caso de teste salvo com sucesso!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao salvar no Supabase: {e}")
-                    else:
-                        st.error("Falha ao gerar o caso de teste pela IA.")
+                        if data and isinstance(data, dict):
+                            payload = {
+                                "project_id": project_id, 
+                                "test_type": test_type,
+                                "title": data.get("title", "Caso de Teste Gerado por IA"), 
+                                "preconditions": data.get("preconditions", ""),
+                                "steps": data.get("steps", ""),
+                                "expected_result": data.get("expected_result", ""),
+                                "status": "Não Executado",
+                                "test_cycle": current_cycle
+                            }
+                            
+                            try:
+                                supabase.table("test_cases").insert(payload).execute()
+                                st.success("Caso de teste salvo com sucesso!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao salvar no Supabase: {e}")
+                        else:
+                            st.error("Falha ao gerar o caso de teste pela IA.")
         else:
             with st.form("manual_tc_form", clear_on_submit=True):
                 title = st.text_input("Título do Caso de Teste")
@@ -122,7 +128,9 @@ def render_test_cases_tab(project_id: str):
                 steps = st.text_area("Passos")
                 expected_result = st.text_area("Resultado Esperado")
                 if st.form_submit_button("💾 Salvar Caso de Teste"):
-                    if title.strip():
+                    if not current_cycle or not current_cycle.strip():
+                        st.error("⚠️ O campo 'Ciclo de Teste Atual / Release' é obrigatório para salvar novos conteúdos. Por favor, preencha-o acima.")
+                    elif title.strip():
                         payload = {
                             "project_id": project_id, 
                             "test_type": test_type, 
@@ -239,7 +247,7 @@ def render_bug_reports_tab(project_id: str):
     
     # Campo para definir o ciclo do bug atual
     bug_cycle_input = st.text_input(
-        "🏷️ Ciclo de Teste do Bug / Release:", 
+        "🏷️ Ciclo de Teste do Bug / Release :red[*]:", 
         value="Geral", 
         key="bug_active_cycle_input",
         help="Informe a release ou ciclo onde este bug foi encontrado."
@@ -253,7 +261,9 @@ def render_bug_reports_tab(project_id: str):
             raw_bug = st.text_area("Descreva o problema encontrado:", key="bug_ai_prompt")
             
             if st.button("✨ Gerar e Salvar Bug Report via IA", type="primary", key="btn_gen_bug_ai"):
-                if raw_bug.strip():
+                if not bug_cycle_input or not bug_cycle_input.strip():
+                    st.error("⚠️ O campo 'Ciclo de Teste do Bug / Release' é obrigatório para gerar novos conteúdos. Por favor, preencha-o acima.")
+                elif raw_bug.strip():
                     with st.spinner("IA criando o Bug Report no padrão ISTQB..."):
                         query_bug_ia = f"{project_id} | Falha relatada: {raw_bug}"
                         data = generate_istqb_content("bug_report", query_bug_ia)
@@ -289,7 +299,9 @@ def render_bug_reports_tab(project_id: str):
                 actual_behavior = st.text_area("Comportamento Atual")
                 
                 if st.form_submit_button("🚨 Registrar Bug"):
-                    if title.strip():
+                    if not bug_cycle_input or not bug_cycle_input.strip():
+                        st.error("⚠️ O campo 'Ciclo de Teste do Bug / Release' é obrigatório para registrar novos conteúdos. Por favor, preencha-o acima.")
+                    elif title.strip():
                         payload = {
                             "project_id": project_id, 
                             "title": title, 
