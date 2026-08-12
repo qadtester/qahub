@@ -24,14 +24,14 @@ def render_test_cases_tab(project_id: str):
     col_c1, col_c2 = st.columns([2, 1])
     with col_c1:
         current_cycle = st.text_input(
-            "🏷️ Ciclo de Teste Atual / Release :red[*]:", 
+            "🏷️ Ciclo de Teste Atual / Release:", 
             value="Geral", 
             help="Ex: Release 1.0, Sprint 12, Pós-Deploy v1.1. Todos os novos testes criados irão para este ciclo."
         )
     with col_c2:
         # Busca ciclos existentes no projeto para facilitar o filtro rápido
         existing_cycles_res = supabase.table("test_cases").select("test_cycle").eq("project_id", project_id).execute()
-        cycles_list = sorted(list(set([row.get("test_cycle", "Geral") for row in (existing_cycles_res.data or [])])))
+        cycles_list = sorted(list(set([row.get("test_cycle", "Geral"] for row in (existing_cycles_res.data or []])))
         if "Geral" not in cycles_list:
             cycles_list.insert(0, "Geral")
 
@@ -42,6 +42,11 @@ def render_test_cases_tab(project_id: str):
         foco_lote = st.text_input("Foco opcional para a suíte (ex: Priorizar testes de segurança e login):", key="batch_ai_foco")
         
         if st.button("✨ Gerar Suíte Completa de Testes com IA", type="primary", key="btn_gen_batch_tc"):
+            if not current_cycle or not current_cycle.strip() or current_cycle.strip() == "Geral":
+                # Alerta amigável caso queira forçar um ciclo específico, ou remova a verificação de "Geral" se "Geral" for válido.
+                # Aqui exigimos que o texto não esteja vazio:
+                pass
+            
             if not current_cycle or not current_cycle.strip():
                 st.error("⚠️ O campo 'Ciclo de Teste Atual / Release' é obrigatório para gerar novos conteúdos. Por favor, preencha-o acima.")
             else:
@@ -247,7 +252,7 @@ def render_bug_reports_tab(project_id: str):
     
     # Campo para definir o ciclo do bug atual
     bug_cycle_input = st.text_input(
-        "🏷️ Ciclo de Teste do Bug / Release :red[*]:", 
+        "🏷️ Ciclo de Teste do Bug / Release:", 
         value="Geral", 
         key="bug_active_cycle_input",
         help="Informe a release ou ciclo onde este bug foi encontrado."
