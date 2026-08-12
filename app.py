@@ -67,7 +67,7 @@ with st.sidebar:
     
     st.write(f"👤 **Usuário:** {user_info.get('name', 'Usuário')}")
     st.caption(f"📧 {user_info.get('email', '')}")
-    st.caption(f"🛡️ **Papel:** `{user_info.get('role', 'editor')}`")
+    st.caption(f"🛡️ **Papel na Equipe:** `{user_info.get('role', 'editor')}`")
     
     st.divider()
 
@@ -80,14 +80,12 @@ with st.sidebar:
         index=list(team_options.values()).index(active_team["id"])
     )
     
-    # Se o usuário trocou de equipe no selectbox, atualiza a sessão e recarrega
     if team_options[selected_team_name] != st.session_state["current_team_id"]:
         st.session_state["current_team_id"] = team_options[selected_team_name]
         st.rerun()
 
     st.info(f"🔑 **Código da Equipe:** `{active_team.get('invite_code', 'N/A')}`")
 
-    # Opção para entrar em outra equipe via código diretamente na barra lateral
     with st.expander("➕ Entrar em Outra Equipe"):
         with st.form("sidebar_join_team"):
             new_code = st.text_input("Código de Convite", placeholder="Ex: A1B2C3")
@@ -96,7 +94,6 @@ with st.sidebar:
                     t_lookup = supabase.table("teams").select("id, name").eq("invite_code", new_code.strip().upper()).execute()
                     if t_lookup.data:
                         found_t = t_lookup.data[0]
-                        # Insere na tabela de membros (caso não exista, faz o upsert)
                         supabase.table("team_members").upsert({
                             "team_id": found_t["id"],
                             "user_id": user_info["id"],
@@ -129,11 +126,11 @@ with st.sidebar:
         "📊 Métricas & Exportação",
     ]
     
-    # Adiciona aba de gestão de membros se for admin da equipe ativa
+    # Administrador da Equipe gerencia os membros da respectiva organização
     if user_info.get("role") == "admin":
         page_options.append("👥 Gestão de Equipe")
 
-    # Adiciona o Painel Master estritamente se o usuário logado for o Master
+    # Acesso Master global baseado rigorosamente no e-mail MASTER_EMAIL
     if is_master_user():
         page_options.append("👑 Painel Master")
 
@@ -182,7 +179,6 @@ elif page == "👥 Gestão de Equipe":
     st.title("👥 Gestão de Membros da Organização")
     st.write(f"Gerencie os usuários vinculados à organização ativa **{active_team.get('name')}**.")
     
-    # Busca membros na tabela team_members cruzando com a tabela users
     members_res = (
         supabase.table("team_members")
         .select("role, users(id, name, email, created_at)")
@@ -208,10 +204,8 @@ elif page == "👥 Gestão de Equipe":
         with cols[2]:
             st.write(f"Criado em: {member['created_at'][:10] if member.get('created_at') else ''}")
         with cols[3]:
-            # Impede o admin de se remover a si mesmo por engano nesta tela
             if member["id"] != user_info["id"]:
                 if st.button("🗑️ Remover", key=f"rm_mem_{member['id']}"):
-                    # Remove da tabela de relacionamento team_members (não deleta o usuário do sistema)
                     supabase.table("team_members").delete().eq("team_id", active_team["id"]).eq("user_id", member["id"]).execute()
                     st.success(f"Usuário {member['name']} removido da equipe.")
                     st.rerun()
