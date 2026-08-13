@@ -5,12 +5,8 @@ from config.database import supabase
 from config.ai_config import generate_istqb_content
 from utils.export import export_to_csv, export_to_markdown
 
-# Lista padrão de tipos de teste para reutilização
 TEST_TYPES = ["Funcional", "Regressão", "Smoke", "Não-Funcional"]
 
-# ==========================================
-# FUNÇÃO AUXILIAR: LIMPEZA DE TÍTULO (REGRESSÃO)
-# ==========================================
 def format_regression_title(original_title: str) -> str:
     """Garante que o prefixo [Regressão] apareça apenas uma vez, limpando acumulados."""
     clean_title = re.sub(r'(\s*\[Regressão\]\s*)+', '', original_title).strip()
@@ -24,11 +20,9 @@ def format_regression_title(original_title: str) -> str:
 def render_test_cases_tab(project_id: str):
     st.subheader("📋 Gestão e Execução de Casos de Teste")
     
-    # Recupera informações do usuário logado e seu papel na equipe atual
     user_info = st.session_state.get("user", {})
     user_role = user_info.get("role", "editor")
     
-    # --- SELETOR GLOBAL DE CICLO ATIVO PARA CRIAÇÃO ---
     col_c1, col_c2 = st.columns([2, 1])
     with col_c1:
         current_cycle = st.text_input(
@@ -41,20 +35,14 @@ def render_test_cases_tab(project_id: str):
     active_cycle = current_cycle.strip()
 
     with col_c2:
-        # Busca ciclos existentes no projeto
         existing_cycles_res = supabase.table("test_cases").select("test_cycle").eq("project_id", project_id).execute()
         cycles_list = sorted(list(set([row.get("test_cycle") for row in (existing_cycles_res.data or []) if row.get("test_cycle") and row.get("test_cycle").strip()])))
 
-    # Nota: Removemos o 'return' que bloqueava a página caso active_cycle estivesse vazio,
-    # permitindo visualizar/editar os testes já criados a qualquer momento.
-
-    # --- GERAÇÃO EM MASSA VIA IA ---
     with st.expander("🚀 Geração Inteligente de Suíte Completa via IA (Múltiplos Testes)", expanded=False):
         if not active_cycle:
             st.warning("⚠️ Preencha o **Ciclo de Teste / Release** acima para usar a geração por IA.")
         else:
             st.info(f"💡 A IA fará a leitura completa do documento do projeto e gerará a suíte atribuindo ao ciclo: **{active_cycle}**")
-            
             foco_lote = st.text_input("Foco opcional para a suíte (ex: Priorizar testes de segurança e login):", key="batch_ai_foco")
             
             if st.button("✨ Gerar Suíte Completa de Testes com IA", type="primary", key="btn_gen_batch_tc"):
@@ -94,7 +82,6 @@ def render_test_cases_tab(project_id: str):
 
     st.divider()
 
-    # --- CRIAÇÃO INDIVIDUAL (PADRÃO ISTQB) ---
     with st.expander("➕ Criar Caso de Teste Individual (Manual ou Unitário com IA)", expanded=False):
         mode = st.radio("Modo de Criação", ["Sem IA (Manual)", "Com IA (Unitário)"], horizontal=True, key="tc_mode_radio")
         test_type = st.selectbox("Tipo de Teste", TEST_TYPES, key="tc_type_select")
@@ -167,7 +154,6 @@ def render_test_cases_tab(project_id: str):
 
     st.divider()
     
-    # --- FILTROS DE SUÍTE ---
     st.markdown("### Suíte de Testes")
     col_f1, col_f2 = st.columns(2)
     with col_f1:
@@ -186,7 +172,6 @@ def render_test_cases_tab(project_id: str):
     if not test_cases:
         st.info("Nenhum caso de teste encontrado com os filtros selecionados.")
     else:
-        # --- BOTÕES DE DOWNLOAD ---
         col_dl1, col_dl2 = st.columns(2)
         with col_dl1:
             csv_data = export_to_csv(test_cases)
@@ -209,7 +194,6 @@ def render_test_cases_tab(project_id: str):
             
         st.markdown("---")
 
-        # --- AGRUPAMENTO POR CICLO / RELEASE ---
         grouped_tc = {}
         for tc in test_cases:
             c_name = tc.get("test_cycle") or "Sem Ciclo"
@@ -238,12 +222,9 @@ def render_test_cases_tab(project_id: str):
                             with c_edit:
                                 with st.popover("✏️ Editar", key=f"pop_edit_tc_{tc['id']}"):
                                     e_title = st.text_input("Título", value=tc['title'], key=f"e_tc_t_{tc['id']}")
-                                    
-                                    # SELEÇÃO DO TIPO DE TESTE NA EDIÇÃO
                                     current_type = tc.get('test_type', 'Funcional')
                                     type_idx = TEST_TYPES.index(current_type) if current_type in TEST_TYPES else 0
                                     e_type = st.selectbox("Tipo de Teste *", TEST_TYPES, index=type_idx, key=f"e_tc_tp_{tc['id']}")
-                                    
                                     e_cycle = st.text_input("Ciclo *", value=cycle_tag, key=f"e_tc_c_{tc['id']}")
                                     e_pre = st.text_area("Pré-condições", value=tc.get('preconditions', ''), key=f"e_tc_p_{tc['id']}")
                                     e_steps = st.text_area("Passos", value=tc.get('steps', ''), key=f"e_tc_s_{tc['id']}")
@@ -264,7 +245,7 @@ def render_test_cases_tab(project_id: str):
                                             st.error("O campo Ciclo é obrigatório.")
 
                             with c_clone:
-                                if st.button("📋 Duplicar Teste", key=f"btn_tc_clone_{tc['id']}", help="Duplica este caso de teste para reuso em outros cenários ou regressão"):
+                                if st.button("📋 Duplicar Teste", key=f"btn_tc_clone_{tc['id']}", help="Duplica este caso de teste"):
                                     new_title = format_regression_title(tc['title']) if tc.get('test_type') == "Regressão" else f"{tc['title']} (Cópia)"
                                     clone_payload = {
                                         "project_id": project_id,
@@ -277,7 +258,7 @@ def render_test_cases_tab(project_id: str):
                                         "test_cycle": tc.get('test_cycle', active_cycle)
                                     }
                                     supabase.table("test_cases").insert(clone_payload).execute()
-                                    st.success("Caso de teste duplicado! Você pode alterar o tipo e ciclo no menu Editar.")
+                                    st.success("Caso de teste duplicado!")
                                     st.rerun()
                             
                             with c_del:
@@ -291,7 +272,6 @@ def render_test_cases_tab(project_id: str):
                         with col_act:
                             st.write(f"**Status:** {status}")
                             st.write("**Executar Ciclo:**")
-                            
                             if st.button("🟢 Passou", key=f"p_{tc['id']}", use_container_width=True):
                                 supabase.table("test_cases").update({"status": "Passou"}).eq("id", tc['id']).execute()
                                 st.rerun()
@@ -313,7 +293,7 @@ def render_bug_reports_tab(project_id: str):
     user_info = st.session_state.get("user", {})
     user_role = user_info.get("role", "editor")
     
-    # Campo para definir o ciclo do bug atual (apenas para registro)
+    # Campo global do ciclo/release ativa para novos bugs
     bug_cycle_input = st.text_input(
         "🏷️ Ciclo de Teste do Bug / Release (para novos registros)", 
         value="", 
@@ -324,6 +304,7 @@ def render_bug_reports_tab(project_id: str):
     
     active_bug_cycle = bug_cycle_input.strip()
 
+    # --- REGISTRO DE BUG ---
     with st.expander("🚨 Registrar Novo Bug", expanded=False):
         bug_mode = st.radio("Modo de Registro:", ["Sem IA (Manual)", "Com IA (Automático)"], horizontal=True, key="bug_mode_radio")
         
@@ -331,7 +312,7 @@ def render_bug_reports_tab(project_id: str):
             if not active_bug_cycle:
                 st.warning("⚠️ Preencha o **Ciclo de Teste do Bug / Release** acima para registrar.")
             else:
-                st.info(f"💡 A IA analisará os documentos do projeto juntamente com o seu relato para montar o Bug Report atribuído ao ciclo: **{active_bug_cycle}**")
+                st.info(f"💡 A IA analisará os documentos do projeto para montar o Bug Report atribuído ao ciclo: **{active_bug_cycle}**")
                 raw_bug = st.text_area("Descreva o problema encontrado:", key="bug_ai_prompt")
                 
                 if st.button("✨ Gerar e Salvar Bug Report via IA", type="primary", key="btn_gen_bug_ai"):
@@ -345,6 +326,7 @@ def render_bug_reports_tab(project_id: str):
                                 payload = {
                                     "project_id": project_id, 
                                     "title": data.get("title", "Bug Relatado por IA"), 
+                                    "description": data.get("description", raw_bug),
                                     "severity": data.get("severity", "Média"),
                                     "steps": steps_content, 
                                     "expected_behavior": data.get("expected_behavior", ""), 
@@ -367,17 +349,19 @@ def render_bug_reports_tab(project_id: str):
                 st.markdown("📝 **Preencha os dados do defeito conforme as diretrizes ISTQB/IEEE 829:**")
                 title = st.text_input("Título do Bug *", placeholder="Ex: Erro 500 ao submeter o formulário de cadastro")
                 severity = st.selectbox("Severidade *", ["Baixa", "Média", "Alta", "Crítica"])
-                steps = st.text_area("Passos para Reproduzir *", placeholder="1. Acessar a página de cadastro.\n2. Preencher dados obrigatórios.\n3. Clicar em Salvar.")
-                expected_behavior = st.text_area("Comportamento Esperado *", placeholder="O cadastro deve ser efetuado com sucesso e exibir mensagem de confirmação.")
-                actual_behavior = st.text_area("Comportamento Atual *", placeholder="A tela trava e exibe uma página em branco com erro 500.")
+                description = st.text_area("Descrição do Problema", placeholder="Resumo e contexto geral do bug...")
+                steps = st.text_area("Passos para Reproduzir *", placeholder="1. Acessar a página...\n2. Preencher...\n3. Clicar em...")
+                expected_behavior = st.text_area("Comportamento Esperado *", placeholder="O cadastro deve ser efetuado com sucesso...")
+                actual_behavior = st.text_area("Comportamento Atual *", placeholder="A tela trava e exibe erro 500...")
                 
                 if st.form_submit_button("🚨 Registrar Bug"):
                     if not active_bug_cycle:
-                        st.error("O campo **Ciclo de Teste do Bug / Release** no topo da aba deve ser preenchido para registrar um novo bug.")
+                        st.error("O campo **Ciclo de Teste do Bug / Release** no topo da aba deve ser preenchido.")
                     elif title.strip() and steps.strip() and expected_behavior.strip() and actual_behavior.strip():
                         payload = {
                             "project_id": project_id, 
                             "title": title, 
+                            "description": description.strip(),
                             "severity": severity,
                             "steps": steps, 
                             "expected_behavior": expected_behavior, 
@@ -392,7 +376,7 @@ def render_bug_reports_tab(project_id: str):
                         except Exception as e:
                             st.error(f"Erro ao salvar no Supabase: {e}")
                     else:
-                        st.error("Todos os campos de texto do Bug Report são obrigatórios.")
+                        st.error("Os campos Título, Passos, Comportamento Esperado e Atual são obrigatórios.")
 
     st.divider()
     
@@ -418,7 +402,7 @@ def render_bug_reports_tab(project_id: str):
     if not bugs:
         st.info("Nenhum bug registrado com estes filtros.")
     else:
-        # --- BOTÕES DE DOWNLOAD ---
+        # --- EXPORTAÇÃO ---
         col_bdl1, col_bdl2 = st.columns(2)
         with col_bdl1:
             csv_bugs = export_to_csv(bugs)
@@ -441,7 +425,7 @@ def render_bug_reports_tab(project_id: str):
             
         st.markdown("---")
 
-        # --- AGRUPAMENTO POR CICLO / RELEASE NOS BUGS ---
+        # --- LISTAGEM E AGRUPAMENTO ---
         grouped_bugs = {}
         for bug in bugs:
             bc_name = bug.get("test_cycle") or "Sem Ciclo"
@@ -456,14 +440,17 @@ def render_bug_reports_tab(project_id: str):
                     sev_color = "🔴" if sev in ["Alta", "Crítica"] else ("🟡" if sev == "Média" else "🟢")
                     
                     with st.expander(f"{sev_color} [{sev}] {bug.get('title')} - Status: `{bug_status}`"):
-                        st.markdown(f"**Ciclo:** `{bug_cycle_tag}`")
-                        st.markdown(f"**Passos:**\n\n{bug.get('steps') or 'N/A'}")
-                        st.markdown(f"**Esperado:** {bug.get('expected_behavior') or 'N/A'}")
-                        st.markdown(f"**Atual:** {bug.get('actual_behavior') or 'N/A'}")
+                        st.markdown(f"**Ciclo / Release:** `{bug_cycle_tag}`")
+                        if bug.get("description"):
+                            st.markdown(f"**Descrição:**\n\n{bug.get('description')}")
+                        st.markdown(f"**Passos para Reproduzir:**\n\n{bug.get('steps') or 'N/A'}")
+                        st.markdown(f"**Comportamento Esperado:** {bug.get('expected_behavior') or 'N/A'}")
+                        st.markdown(f"**Comportamento Atual:** {bug.get('actual_behavior') or 'N/A'}")
                         
                         st.divider()
-                        c_status, c_edit, c_del = st.columns([2, 1, 1])
+                        c_status, c_edit, c_clone, c_del = st.columns([2, 1, 1, 1])
                         
+                        # --- MODIFICAR STATUS ---
                         with c_status:
                             status_options = ["Aberto", "Em correção", "Pronto para Teste", "Passou", "Fechado"]
                             current_idx = status_options.index(bug_status) if bug_status in status_options else 0
@@ -480,31 +467,66 @@ def render_bug_reports_tab(project_id: str):
                                     st.success("Status atualizado!")
                                     st.rerun()
 
+                        # --- EDITAR BUG ---
                         with c_edit:
                             with st.popover("✏️ Editar", key=f"pop_edit_bug_{bug['id']}"):
                                 e_title = st.text_input("Título", value=bug['title'], key=f"e_b_t_{bug['id']}")
-                                e_cycle = st.text_input("Ciclo *", value=bug_cycle_tag, key=f"e_b_c_{bug['id']}")
-                                e_sev = st.selectbox("Severidade", ["Baixa", "Média", "Alta", "Crítica"], index=["Baixa", "Média", "Alta", "Crítica"].index(sev) if sev in ["Baixa", "Média", "Alta", "Crítica"] else 1, key=f"e_b_s_{bug['id']}")
+                                e_cycle = st.text_input("Ciclo / Release *", value=bug_cycle_tag, key=f"e_b_c_{bug['id']}")
+                                e_sev = st.selectbox(
+                                    "Severidade", 
+                                    ["Baixa", "Média", "Alta", "Crítica"], 
+                                    index=["Baixa", "Média", "Alta", "Crítica"].index(sev) if sev in ["Baixa", "Média", "Alta", "Crítica"] else 1, 
+                                    key=f"e_b_s_{bug['id']}"
+                                )
+                                e_desc = st.text_area("Descrição do Problema", value=bug.get('description', ''), key=f"e_b_d_{bug['id']}")
                                 e_steps = st.text_area("Passos", value=bug.get('steps', ''), key=f"e_b_st_{bug['id']}")
                                 e_exp = st.text_area("Esperado", value=bug.get('expected_behavior', ''), key=f"e_b_ex_{bug['id']}")
                                 e_act = st.text_area("Atual", value=bug.get('actual_behavior', ''), key=f"e_b_ac_{bug['id']}")
+                                
                                 if st.button("Salvar Alterações", key=f"btn_bug_edit_{bug['id']}"):
                                     if e_cycle.strip():
                                         supabase.table("bug_reports").update({
-                                            "title": e_title, "test_cycle": e_cycle.strip(), "severity": e_sev, "steps": e_steps,
-                                            "expected_behavior": e_exp, "actual_behavior": e_act
+                                            "title": e_title, 
+                                            "test_cycle": e_cycle.strip(), 
+                                            "severity": e_sev, 
+                                            "description": e_desc,
+                                            "steps": e_steps,
+                                            "expected_behavior": e_exp, 
+                                            "actual_behavior": e_act
                                         }).eq('id', bug['id']).execute()
                                         st.rerun()
                                     else:
                                         st.error("O campo Ciclo é obrigatório.")
-                        
+
+                        # --- DUPLICAR / CLONAR BUG ---
+                        with c_clone:
+                            if st.button("📋 Duplicar Bug", key=f"btn_bug_clone_{bug['id']}", help="Duplica este bug para reutilização em outro ciclo ou reabertura em novo módulo"):
+                                bug_clone_payload = {
+                                    "project_id": project_id,
+                                    "title": f"{bug['title']} (Cópia)",
+                                    "description": bug.get("description", ""),
+                                    "severity": bug.get("severity", "Média"),
+                                    "steps": bug.get("steps", ""),
+                                    "expected_behavior": bug.get("expected_behavior", ""),
+                                    "actual_behavior": bug.get("actual_behavior", ""),
+                                    "status": "Aberto",
+                                    "test_cycle": active_bug_cycle if active_bug_cycle else bug_cycle_tag
+                                }
+                                try:
+                                    supabase.table("bug_reports").insert(bug_clone_payload).execute()
+                                    st.success("Bug duplicado com sucesso!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao duplicar bug: {e}")
+
+                        # --- EXCLUIR BUG ---
                         with c_del:
                             if user_role in ["admin", "owner"]:
                                 if st.button("🗑️ Excluir", key=f"btn_bug_del_{bug['id']}", type="primary"):
                                     supabase.table("bug_reports").delete().eq('id', bug['id']).execute()
                                     st.rerun()
                             else:
-                                st.caption("🔒 Exclusão restrita")
+                                st.caption("🔒 Restrito")
 
 def render_testing_module(project_id: str):
     if not project_id:
