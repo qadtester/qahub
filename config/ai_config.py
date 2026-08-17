@@ -16,26 +16,15 @@ load_dotenv()
 # ------------------------------------------------------------------------------
 FREE_MODELS = {
     "groq": [
-        "openai/gpt-oss-20b",    # 🏆 Melhor performance geral e raciocínio
+        "openai/gpt-oss-120b",    # 🏆 
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.6-27b"      
+    ],
+    "openrouter": [
+        "openai/gpt-oss-20b",    # 🏆 
         "dots-studio/dots-3-note-preview:free",
         "google/gemma-4-26b-a4b-it:free",
         "google/gemma-4-31b-it:free"
-        
-    ],
-    "openrouter": [
-        "google/gemma-4-31b:free",     # 🏆 Excelente para JSON estrito e BDD
-        "google/gemma-4-26b-a4b:free",   # Excelente alternativa leve
-        "nvidia/nemotron-nano-9b-v2:free",
-        "nvidia/nemotron-3-nano-30b-a3b:free",
-        "nvidia/nemotron-3-ultra:free",
-        "poolside/laguna-s-2.1:free",
-        "nvidia/nemotron-3-super:free",
-        "cohere/north-mini-code:free",
-        "poolside/laguna-xs-2.1:free",
-        "inclusionai/ling-3.0-tiny:free",
-        "nvidia/nemotron-3-nano-omni:free",
-        "openai/gpt-oss-20b:free",
-        "nvidia/nemotron-nano-12b-2-vl:free"
     ],
     "gemini": [
         "gemini-3.6-flash",
