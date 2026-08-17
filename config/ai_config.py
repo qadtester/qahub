@@ -16,11 +16,11 @@ load_dotenv()
 # ------------------------------------------------------------------------------
 FREE_MODELS = {
     "groq": [
-        "llama-3.3-70b-versatile",    # 🏆 Melhor performance geral e raciocínio
-        "llama-3.1-8b-instant",       # Ultra rápido
-        "qwen/qwen3.6-27b",
-        "openai/gpt-oss-120b",
-        "openai/gpt-oss-20b"
+        "openai/gpt-oss-20b",    # 🏆 Melhor performance geral e raciocínio
+        "dots-studio/dots-3-note-preview:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "google/gemma-4-31b-it:free"
+        
     ],
     "openrouter": [
         "google/gemma-4-31b:free",     # 🏆 Excelente para JSON estrito e BDD
@@ -38,11 +38,11 @@ FREE_MODELS = {
         "nvidia/nemotron-nano-12b-2-vl:free"
     ],
     "gemini": [
-        "gemini-2.0-flash",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-        "gemini-1.5-flash",
-        "gemini-3.5-flash"
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash"
     ]
 }
 
