@@ -16,22 +16,33 @@ load_dotenv()
 # ------------------------------------------------------------------------------
 FREE_MODELS = {
     "groq": [
-        "openai/gpt-oss-120b",    # 🏆 
-        "openai/gpt-oss-20b",
-        "qwen/qwen3.6-27b"      
+        "llama-3.3-70b-versatile",    # 🏆 Melhor performance geral e raciocínio
+        "llama-3.1-8b-instant",       # Ultra rápido
+        "qwen/qwen3.6-27b",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b"
     ],
     "openrouter": [
-        "openai/gpt-oss-20b",    # 🏆 
-        "dots-studio/dots-3-note-preview:free",
-        "google/gemma-4-26b-a4b-it:free",
-        "google/gemma-4-31b-it:free"
+        "google/gemma-4-31b:free",     # 🏆 Excelente para JSON estrito e BDD
+        "google/gemma-4-26b-a4b:free",   # Excelente alternativa leve
+        "nvidia/nemotron-nano-9b-v2:free",
+        "nvidia/nemotron-3-nano-30b-a3b:free",
+        "nvidia/nemotron-3-ultra:free",
+        "poolside/laguna-s-2.1:free",
+        "nvidia/nemotron-3-super:free",
+        "cohere/north-mini-code:free",
+        "poolside/laguna-xs-2.1:free",
+        "inclusionai/ling-3.0-tiny:free",
+        "nvidia/nemotron-3-nano-omni:free",
+        "openai/gpt-oss-20b:free",
+        "nvidia/nemotron-nano-12b-2-vl:free"
     ],
     "gemini": [
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite",
-        "gemini-2.5-flash"
+        "gemini-2.0-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
+        "gemini-3.5-flash"
     ]
 }
 
